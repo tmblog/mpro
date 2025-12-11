@@ -1,0 +1,40 @@
+{
+  "offers": [
+    {
+      "id": "bogof_burger",
+      "type": "bogof",
+      "name": "2 for 1 Burgers",
+      "description": "Buy one get one free on selected burgers",
+      "badge": "2 FOR 1",
+      "products": [58,1],
+      "active": true,
+      "validFrom": "2025-01-01 00:00:00",
+      "validUntil": "2025-12-31 23:59:59"
+    },
+    {
+      "id": "free_side_25",
+      "type": "free_on_spend",
+      "name": "Free Side",
+      "description": "Spend £25 and choose two free sides",
+      "minSpend": 25,
+      "eligibleProducts": [100,1006, 1007],
+      "maxQuantity": 2,
+      "active": true,
+      "validFrom": "2025-01-01 00:00:00",
+      "validUntil": "2025-12-31 23:59:59"
+    },
+    {
+      "id": "buy3_pizza",
+      "type": "buy_x_get_free",
+      "name": "Buy 3 Get 1 Free",
+      "description": "Buy 3 pizzas, get the cheapest free",
+      "triggerProducts": [30, 31, 32, 33],
+      "triggerQuantity": 3,
+      "rewardProducts": [30, 31, 32, 33],
+      "cheapestFree": true,
+      "active": true,
+      "validFrom": "2025-01-01 00:00:00",
+      "validUntil": "2024-12-31 23:59:59"
+    }
+  ]
+}
