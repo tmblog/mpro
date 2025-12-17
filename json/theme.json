@@ -1,0 +1,40 @@
+{
+  "logo": "assets/images/logo.png",
+  "favicon": "assets/images/favicon.ico",
+  "colors": {
+    "primary": "#ff6b35",
+    "secondary": "#f7931e",
+    "accent": "#c73e1d",
+    "success": "#28a745",
+    "danger": "#dc3545",
+    "text": "#333333",
+    "text_light": "#666666",
+    "background": "#ffffff",
+    "background_alt": "#f8f9fa"
+  },
+  "fonts": {
+    "heading": "Poppins",
+    "body": "Roboto"
+  },
+  "hero": {
+    "enabled": true,
+    "autoplay": true,
+    "interval": 5000,
+    "slides": [
+      {
+        "image": "assets/images/slides/slide1.jpg",
+        "title": "Welcome to Grizzlys",
+        "subtitle": "Best burgers in town",
+        "cta_text": "Order Now",
+        "cta_link": "/order-online"
+      }
+    ]
+  },
+  "social": {
+    "facebook": "",
+    "instagram": "",
+    "twitter": "",
+    "tiktok": ""
+  },
+  "footer_text": "© 2025 Grizzlys Burgers. All rights reserved."
+}

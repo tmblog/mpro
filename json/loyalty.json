@@ -1,0 +1,43 @@
+{
+    "earnRate": 5,
+    "earnType": "percent",
+    "redemptionRate": 100,
+    "minRedemption": 100,
+    "maxRedemptionPerOrder": 1000,
+    "pointsExpiry": 365,
+    "awardOn": "accepted",
+    "stackableWithPromos": false,
+    "tiers": {
+        "bronze": {
+            "name": "Bronze",
+            "threshold": 0,
+            "multiplier": 1,
+            "perks": ["Earn points on every order"]
+        },
+        "silver": {
+            "name": "Silver",
+            "threshold": 100,
+            "multiplier": 1.25,
+            "perks": ["1.25x points", "Birthday reward"]
+        },
+        "gold": {
+            "name": "Gold",
+            "threshold": 500,
+            "multiplier": 1.5,
+            "perks": ["1.5x points", "Free delivery", "Early access to new items"]
+        },
+        "platinum": {
+            "name": "Platinum",
+            "threshold": 1000,
+            "multiplier": 2,
+            "perks": ["2x points", "Free delivery", "Exclusive offers", "Priority support"]
+        }
+    },
+    "bonusMultiplier": {
+        "active": false,
+        "multiplier": 1,
+        "validFrom": null,
+        "validUntil": null,
+        "description": null
+    }
+}

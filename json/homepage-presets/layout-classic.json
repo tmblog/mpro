@@ -1,0 +1,95 @@
+{
+  "name": "Classic",
+  "description": "Large hero image, featured products, category grid",
+  "layout": "classic",
+  "rows": [
+    {
+      "id": "hero-section",
+      "type": "hero",
+      "enabled": true,
+      "settings": {
+        "backgroundImage": "assets/images/hero-burger.png",
+        "backgroundOverlay": true,
+        "overlayOpacity": 0.3,
+        "height": "32rem",
+        "alignment": "left"
+      },
+      "content": {
+        "title": "Welcome to {site_name}",
+        "subtitle": "Fresh, delicious food delivered to your door",
+        "ctaText": "Order Now",
+        "ctaLink": "/order-online",
+        "ctaStyle": "light"
+      }
+    },
+    {
+      "id": "features-row",
+      "type": "columns",
+      "enabled": true,
+      "settings": {
+        "containerFluid": false,
+        "spacing": "my-5",
+        "textAlign": "center"
+      },
+      "columns": [
+        {
+          "width": 4,
+          "type": "icon_text",
+          "content": {
+            "icon": "clock",
+            "title": "Fast Delivery",
+            "text": "Hot food delivered to your door in minutes"
+          }
+        },
+        {
+          "width": 4,
+          "type": "icon_text",
+          "content": {
+            "icon": "badge",
+            "title": "Fresh Ingredients",
+            "text": "100% Halal meat, freshly prepared daily"
+          }
+        },
+        {
+          "width": 4,
+          "type": "icon_text",
+          "content": {
+            "icon": "calendar",
+            "title": "Order Ahead",
+            "text": "Schedule your order for later today"
+          }
+        }
+      ]
+    },
+    {
+      "id": "featured-products",
+      "type": "featured_products",
+      "enabled": true,
+      "settings": {
+        "spacing": "my-5",
+        "limit": 6,
+        "showBadges": true
+      },
+      "content": {
+        "title": "Customer Favorites",
+        "subtitle": "Try our most popular dishes"
+      }
+    },
+    {
+      "id": "cta-section",
+      "type": "cta",
+      "enabled": true,
+      "settings": {
+        "backgroundColor": "light",
+        "spacing": "py-5"
+      },
+      "content": {
+        "title": "Ready to order?",
+        "subtitle": "Browse our menu and get your favorites delivered",
+        "ctaText": "View Menu",
+        "ctaLink": "/order-online",
+        "ctaStyle": "primary"
+      }
+    }
+  ]
+}

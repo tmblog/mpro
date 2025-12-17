@@ -1,0 +1,54 @@
+{
+  "enabled": true,
+  "radius": 3,
+  "unit": "miles",
+  "baseFee": 2.50,
+  "feePerMile": 0.50,
+  "freeDeliveryThreshold": 0,
+  "windows": [
+    {
+      "days": [1, 2, 3, 4, 5],
+      "method": "collection",
+      "start": "12:00",
+      "end": "23:59",
+      "endsNextDay": false,
+      "minOrder": 0,
+      "label": "Collection",
+      "readyInMinutes": 20
+    },
+    {
+      "days": [1, 2, 4, 5],
+      "method": "delivery",
+      "start": "17:00",
+      "end": "23:59",
+      "endsNextDay": false,
+      "minOrder": 15,
+      "label": "Delivery",
+      "readyInMinutes": 40
+    },
+    {
+      "days": [6, 7],
+      "method": "collection",
+      "start": "12:00",
+      "end": "01:30",
+      "endsNextDay": true,
+      "minOrder": 0,
+      "label": "Collection",
+      "readyInMinutes": 20
+    },
+    {
+      "days": [6, 7],
+      "method": "delivery",
+      "start": "12:00",
+      "end": "01:30",
+      "endsNextDay": true,
+      "minOrder": 15,
+      "label": "Delivery",
+      "readyInMinutes": 40
+    }
+  ],
+  "postcodes": {
+    "allowed": [],
+    "blocked": ["SW1A", "EC1A"]
+  }
+}

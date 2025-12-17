@@ -1,0 +1,13 @@
+{
+    "require_token": false,
+    "session_expiry_hours": 4,
+    "methods": ["table", "collection"],
+    "tables": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    "tokens": ["a8f3b2", "c4d5e6", "f7g8h9"],
+    "guest_fields": {
+        "name": { "required": true },
+        "phone": { "required": true },
+        "email": { "required": false }
+    },
+    "prompt_signup": true
+}

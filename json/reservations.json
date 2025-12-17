@@ -1,0 +1,73 @@
+{
+  "enabled": true,
+  "capacity": {
+    "max_covers_per_slot": 30,
+    "slot_interval_minutes": 30,
+    "warning_threshold": 0.8
+  },
+  "booking_window": {
+    "min_hours_advance": 2,
+    "max_days_advance": 60
+  },
+  "cancellation": {
+    "allowed": true,
+    "min_hours_before": 24,
+    "refund_deposit": true
+  },
+  "deposits": {
+    "enabled": true,
+    "mode": "conditional",
+    "amount_per_person": 10.00,
+    "conditions": {
+      "always_require": false,
+      "party_size_threshold": 6,
+      "busy_times": [
+        {
+          "name": "Friday & Saturday Evenings",
+          "days": ["Fri", "Sat"],
+          "start": "18:00",
+          "end": "22:00"
+        },
+        {
+          "name": "Sunday Lunch",
+          "days": ["Sun"],
+          "start": "12:00",
+          "end": "15:00"
+        }
+      ]
+    }
+  },
+  "loyalty_points": {
+    "enabled": true,
+    "award_on": "completed",
+    "percentage": 10,
+    "minimum_points": 10
+  },
+  "party_size": {
+    "min": 1,
+    "max": 20,
+    "large_party_threshold": 8
+  },
+  "reminders": {
+    "enabled": true,
+    "send_before_hours": 24
+  },
+  "special_requests": {
+    "enabled": true,
+    "max_length": 500,
+    "suggestions": [
+      "Window seat",
+      "Quiet area",
+      "High chair needed",
+      "Birthday celebration",
+      "Anniversary",
+      "Wheelchair accessible",
+      "Allergies (please specify)"
+    ]
+  },
+  "no_show_policy": {
+    "enabled": true,
+    "grace_period_minutes": 15,
+    "forfeit_deposit": true
+  }
+}

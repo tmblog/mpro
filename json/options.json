@@ -1,0 +1,114 @@
+[
+    {
+        "id": 1,
+        "name": "Pizza Base",
+        "order": 1,
+        "options": [
+            {
+                "id": 1,
+                "name": "Tomato Base",
+                "price": 0,
+                "stock": 1
+            },
+            {
+                "id": 2,
+                "name": "Garlic Base",
+                "price": 0,
+                "stock": 1
+            },
+            {
+                "id": 3,
+                "name": "BBQ Base",
+                "price": 0,
+                "stock": 1
+            }
+        ]
+    },
+    {
+        "id": 2,
+        "name": "Crust Type",
+        "order": 2,
+        "options": [
+            {
+                "id": 5,
+                "name": "Deep Pan",
+                "price": 0,
+                "stock": 1
+            },
+            {
+                "id": 6,
+                "name": "Thin Crust",
+                "price": 0,
+                "stock": 1
+            },
+            {
+                "id": 7,
+                "name": "Stuffed Crust",
+                "price": 1.00,
+                "stock": 1
+            }
+        ]
+    },
+    {
+        "id": 5,
+        "name": "Free Toppings",
+        "order": 3,
+        "options": [
+            {
+                "id": 1,
+                "name": "Cheese",
+                "price": 0,
+                "stock": 1
+            },
+            {
+                "id": 2,
+                "name": "Pepperoni",
+                "price": 0,
+                "stock": 1
+            },
+            {
+                "id": 3,
+                "name": "Mushrooms",
+                "price": 0,
+                "stock": 1
+            },
+            {
+                "id": 4,
+                "name": "Olives",
+                "price": 0,
+                "stock": 1
+            }
+        ]
+    },
+    {
+        "id": 6,
+        "name": "Extra Toppings",
+        "order": 4,
+        "options": [
+            {
+                "id": 1,
+                "name": "Extra Cheese",
+                "price": 0.70,
+                "stock": 1
+            },
+            {
+                "id": 2,
+                "name": "Extra Pepperoni",
+                "price": 0.70,
+                "stock": 1
+            },
+            {
+                "id": 3,
+                "name": "Jalapeños",
+                "price": 0.70,
+                "stock": 1
+            },
+            {
+                "id": 4,
+                "name": "Prawns",
+                "price": 1.50,
+                "stock": 1
+            }
+        ]
+    }
+]

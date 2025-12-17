@@ -1,0 +1,61 @@
+{
+  "name": "Minimal",
+  "description": "Clean text-focused, subtle imagery, centered CTAs",
+  "layout": "minimal",
+  "rows": [
+    {
+      "id": "text-hero",
+      "type": "text_block",
+      "enabled": true,
+      "settings": {
+        "spacing": "py-5 my-5",
+        "textAlign": "center",
+        "containerWidth": "narrow"
+      },
+      "content": {
+        "html": "<h1 class='display-3 fw-bold mb-4'>Welcome to {site_name}</h1><p class='lead text-muted mb-4'>Experience the finest cuisine, delivered fresh to your door</p><a href='/order-online' class='btn btn-primary btn-lg'>Start Ordering</a>"
+      }
+    },
+    {
+      "id": "split-content",
+      "type": "columns",
+      "enabled": true,
+      "settings": {
+        "containerFluid": false,
+        "spacing": "my-5",
+        "verticalAlign": "center"
+      },
+      "columns": [
+        {
+          "width": 6,
+          "type": "text",
+          "content": {
+            "html": "<h2 class='mb-4'>About Us</h2><p class='text-muted'>We pride ourselves on using only the freshest ingredients, prepared with care and delivered with speed. Every dish is crafted to perfection.</p><p class='text-muted'>Whether you're craving comfort food or something new, we've got you covered.</p>"
+          }
+        },
+        {
+          "width": 6,
+          "type": "image",
+          "content": {
+            "src": "assets/images/hero-burger.png",
+            "alt": "Fresh food preparation",
+            "rounded": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "minimal-cta",
+      "type": "text_block",
+      "enabled": true,
+      "settings": {
+        "spacing": "py-5 my-5",
+        "textAlign": "center",
+        "backgroundColor": "light"
+      },
+      "content": {
+        "html": "<h3 class='mb-3'>Ready when you are</h3><p class='text-muted mb-4'>Order online for delivery or collection</p><a href='/order-online' class='btn btn-outline-primary btn-lg'>Browse Menu</a>"
+      }
+    }
+  ]
+}

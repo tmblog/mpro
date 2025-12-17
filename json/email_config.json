@@ -1,0 +1,9 @@
+{
+  "smtp_host": "email-smtp.eu-west-2.amazonaws.com",
+  "smtp_port": 25,
+  "smtp_username": "AKIAZKB2XLJLYMJPTNOP",
+  "smtp_password": "BAGp5NmCGGq9wt8g6HOhC1StRNmaPcUWg5fsZjYepalc",
+  "smtp_secure": "tls",
+  "from_email": "orders@ashanewark.co.uk",
+  "from_name": "Online Orders"
+}

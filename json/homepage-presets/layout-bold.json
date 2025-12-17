@@ -1,0 +1,90 @@
+{
+  "name": "Bold",
+  "description": "Full-screen hero image, overlay text, prominent CTAs",
+  "layout": "bold",
+  "rows": [
+    {
+      "id": "fullscreen-hero",
+      "type": "hero",
+      "enabled": true,
+      "settings": {
+        "backgroundImage": "assets/images/hero-burger.png",
+        "backgroundOverlay": true,
+        "overlayOpacity": 0.5,
+        "height": "100vh",
+        "alignment": "center"
+      },
+      "content": {
+        "title": "{site_name}",
+        "subtitle": "Delicious food, delivered fast",
+        "ctaText": "Order Now",
+        "ctaLink": "/order-online",
+        "ctaStyle": "primary",
+        "ctaSize": "lg"
+      }
+    },
+    {
+      "id": "bold-features",
+      "type": "columns",
+      "enabled": true,
+      "settings": {
+        "containerFluid": false,
+        "spacing": "py-5",
+        "backgroundColor": "dark",
+        "textColor": "white"
+      },
+      "columns": [
+        {
+          "width": 3,
+          "type": "stat",
+          "content": {
+            "number": "30min",
+            "label": "Average Delivery"
+          }
+        },
+        {
+          "width": 3,
+          "type": "stat",
+          "content": {
+            "number": "100%",
+            "label": "Fresh Ingredients"
+          }
+        },
+        {
+          "width": 3,
+          "type": "stat",
+          "content": {
+            "number": "5-Star",
+            "label": "Customer Rating"
+          }
+        },
+        {
+          "width": 3,
+          "type": "stat",
+          "content": {
+            "number": "50+",
+            "label": "Menu Items"
+          }
+        }
+      ]
+    },
+    {
+      "id": "bold-cta",
+      "type": "cta",
+      "enabled": true,
+      "settings": {
+        "backgroundColor": "primary",
+        "spacing": "py-5",
+        "textColor": "white"
+      },
+      "content": {
+        "title": "Hungry? We've got you covered.",
+        "subtitle": "Fast delivery, fresh food, great prices",
+        "ctaText": "View Full Menu",
+        "ctaLink": "/order-online",
+        "ctaStyle": "light",
+        "ctaSize": "lg"
+      }
+    }
+  ]
+}

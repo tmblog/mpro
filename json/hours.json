@@ -1,0 +1,71 @@
+{
+  "days": [
+    {
+      "day": "Mon",
+      "open": "12:00",
+      "close": "01:30",
+      "closed": false,
+      "endsNextDay": true
+    },
+    {
+      "day": "Tue",
+      "open": "12:00",
+      "close": "01:30",
+      "closed": false,
+      "endsNextDay": true
+    },
+    {
+      "day": "Wed",
+      "open": "12:00",
+      "close": "01:30",
+      "closed": false,
+      "endsNextDay": true
+    },
+    {
+      "day": "Thu",
+      "open": "12:00",
+      "close": "01:30",
+      "closed": false,
+      "endsNextDay": true
+    },
+    {
+      "day": "Fri",
+      "open": "12:00",
+      "close": "02:00",
+      "closed": false,
+      "endsNextDay": true
+    },
+    {
+      "day": "Sat",
+      "open": "12:00",
+      "close": "02:00",
+      "closed": false,
+      "endsNextDay": true
+    },
+    {
+      "day": "Sun",
+      "open": "12:00",
+      "close": "01:30",
+      "closed": false,
+      "endsNextDay": true
+    }
+  ],
+  "holidays": [
+    {
+      "date": "2025-12-25",
+      "message": "Closed for Christmas - Back on 26th Dec"
+    },
+    {
+      "date": "2025-01-01",
+      "message": "Closed for New Year - Back on 2nd Jan"
+    }
+  ],
+  "special_hours": [
+    {
+      "date": "2025-12-24",
+      "open": "12:00",
+      "close": "20:00",
+      "message": "Christmas Eve - Closing early at 8pm"
+    }
+  ]
+}
