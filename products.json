@@ -1,0 +1,735 @@
+{
+    "Pizza": {
+        "description": "All our pizzas are made fresh to order, choose from our set pizzas or with your choice of toppings.",
+        "products": [
+            {
+                "id": 1,
+                "name": "Build Your Own - Small (10\")",
+                "dsc": "Create your perfect small pizza",
+                "price": "7.95",
+                "img": "",
+                "stock": 1,
+                "cpn": 1,
+                "order": 1,
+                "allergens": [
+                    "gluten",
+                    "milk",
+                    "eggs",
+                    "nuts"
+                ],
+                "options": [
+                    {
+                        "group_id": 2,
+                        "min": 0,
+                        "max": 1,
+                        "price_adjustment": 0,
+                        "initially_visible": true
+                    },
+                    {
+                        "group_id": 6,
+                        "min": 0,
+                        "max": 6,
+                        "price_adjustment": 0,
+                        "initially_visible": true
+                    },
+                    {
+                        "group_id": 1,
+                        "min": 1,
+                        "max": 1,
+                        "price_adjustment": 0,
+                        "initially_visible": true
+                    }
+                ],
+                "featured": false
+            },
+            {
+                "id": 2,
+                "name": "Build Your Own - Medium (12\")",
+                "dsc": "Create your perfect medium pizzas",
+                "price": "9.95",
+                "img": "",
+                "cpn": 1,
+                "order": 1,
+                "stock": 1,
+                "options": [
+                    {
+                        "group_id": 1,
+                        "min": 1,
+                        "max": 1,
+                        "price_adjustment": 0,
+                        "initially_visible": true
+                    },
+                    {
+                        "group_id": 5,
+                        "min": 2,
+                        "max": 4,
+                        "price_adjustment": 0,
+                        "initially_visible": false,
+                        "revealed_by": [
+                            5
+                        ]
+                    },
+                    {
+                        "group_id": 6,
+                        "min": 0,
+                        "max": 6,
+                        "price_adjustment": 0.2,
+                        "initially_visible": true
+                    },
+                    {
+                        "group_id": 2,
+                        "min": 0,
+                        "max": 1,
+                        "price_adjustment": 0.5,
+                        "initially_visible": true
+                    }
+                ]
+            },
+            {
+                "id": 3,
+                "name": "Build Your Own - Large (15\")",
+                "dsc": "Create your perfect large pizzas",
+                "price": "12.95",
+                "img": "",
+                "cpn": 1,
+                "order": 1,
+                "stock": 1,
+                "featured": true,
+                "options": [
+                    {
+                        "group_id": 1,
+                        "min": 1,
+                        "max": 1,
+                        "price_adjustment": 0,
+                        "initially_visible": true
+                    },
+                    {
+                        "group_id": 2,
+                        "min": 0,
+                        "max": 1,
+                        "price_adjustment": 1,
+                        "initially_visible": true
+                    },
+                    {
+                        "group_id": 5,
+                        "min": 2,
+                        "max": 5,
+                        "price_adjustment": 0,
+                        "initially_visible": false,
+                        "revealed_by": [
+                            5,
+                            6
+                        ]
+                    },
+                    {
+                        "group_id": 6,
+                        "min": 0,
+                        "max": 0,
+                        "price_adjustment": 0.5,
+                        "initially_visible": true
+                    }
+                ]
+            },
+            {
+                "stock": 1,
+                "cpn": 1,
+                "order": 6,
+                "id": 1188,
+                "name": "Hawaiian",
+                "dsc": "The classic",
+                "price": "14.99",
+                "featured": false,
+                "options": [
+                    {
+                        "group_id": 2,
+                        "min": 0,
+                        "max": 1,
+                        "price_adjustment": 0,
+                        "initially_visible": true
+                    },
+                    {
+                        "group_id": 5,
+                        "min": 0,
+                        "max": 4,
+                        "price_adjustment": 0,
+                        "initially_visible": false,
+                        "revealed_by": [
+                            7
+                        ]
+                    },
+                    {
+                        "group_id": 1,
+                        "min": 0,
+                        "max": 1,
+                        "price_adjustment": 0,
+                        "initially_visible": true
+                    }
+                ],
+                "allergens": []
+            },
+            {
+                "stock": 1,
+                "cpn": 1,
+                "order": 4,
+                "name": "Margherita Pizza",
+                "dsc": "The classic",
+                "price": "7.99",
+                "featured": false,
+                "table_price": 5.99,
+                "allergens": [
+                    "celery",
+                    "crustaceans",
+                    "sulphites"
+                ],
+                "options": [
+                    {
+                        "group_id": 1,
+                        "min": 0,
+                        "max": 0,
+                        "price_adjustment": 0,
+                        "initially_visible": true
+                    },
+                    {
+                        "group_id": 2,
+                        "min": 1,
+                        "max": 1,
+                        "price_adjustment": 0,
+                        "initially_visible": true
+                    },
+                    {
+                        "group_id": 5,
+                        "min": 1,
+                        "max": 1,
+                        "price_adjustment": 0,
+                        "initially_visible": false,
+                        "revealed_by": [
+                            5
+                        ]
+                    }
+                ],
+                "id": 1182
+            },
+            {
+                "id": 1196,
+                "name": "Margherita",
+                "price": "9.95",
+                "dsc": "Classic tomato and mozzarella",
+                "stock": 1
+            },
+            {
+                "id": 1197,
+                "name": "Pepperoni",
+                "price": "11.95",
+                "dsc": "Spicy pepperoni with cheese",
+                "stock": 1
+            },
+            {
+                "id": 1198,
+                "name": "Garlic Bread",
+                "price": "4.50",
+                "dsc": "",
+                "stock": 1,
+                "cpn": 1,
+                "featured": false,
+                "allergens": [
+                    "celery",
+                    "mustard"
+                ],
+                "options": []
+            }
+        ]
+    },
+    "Grills": {
+        "description": "Delicious grilled dishes cooked to perfection.",
+        "products": [
+            {
+                "id": 250,
+                "name": "Grilled Salmon",
+                "dsc": "Fresh salmon fillet grilled with herbs",
+                "price": "14.95",
+                "img": "",
+                "stock": 1,
+                "cpn": 1,
+                "order": 1
+            },
+            {
+                "id": 251,
+                "name": "BBQ Ribs",
+                "dsc": "Tender ribs smothered in BBQ sauce",
+                "price": "16.95",
+                "img": "",
+                "stock": 1,
+                "cpn": 1,
+                "order": 2
+            },
+            {
+                "stock": 1,
+                "cpn": 1,
+                "order": 3,
+                "id": 1193,
+                "name": "Grilled Prawns",
+                "dsc": "Perfection",
+                "price": "7.99",
+                "featured": false,
+                "allergens": [
+                    "crustaceans",
+                    "fish"
+                ]
+            }
+        ]
+    },
+    "Burgers": {
+        "description": "Juicy burgers made with fresh ingredients.",
+        "products": [
+            {
+                "id": 150,
+                "name": "Classic Beef Burger",
+                "dsc": "100% beef patty with lettuce, tomato, and cheese and house relish",
+                "price": "8.95",
+                "table_price": 5.99,
+                "img": "",
+                "stock": 1,
+                "cpn": 1,
+                "order": 1,
+                "allergens": [
+                    "gluten",
+                    "milk",
+                    "eggs",
+                    "sesame"
+                ],
+                "featured": false,
+                "options": []
+            },
+            {
+                "id": 151,
+                "name": "Chicken Burger",
+                "dsc": "Grilled chicken breast with mayo and salad",
+                "price": "7.95",
+                "img": "",
+                "stock": 1,
+                "cpn": 1,
+                "order": 2
+            },
+            {
+                "stock": 1,
+                "cpn": 1,
+                "order": 3,
+                "name": "In-House",
+                "dsc": "The in house burger that's the talk of the town, pick chicken or beef loaded with crazy fillings.",
+                "vari": [
+                    {
+                        "id": 1184,
+                        "name": "Beef",
+                        "price": "6.99"
+                    },
+                    {
+                        "id": 1185,
+                        "name": "Chicken",
+                        "price": "6.99"
+                    },
+                    {
+                        "stock": 1,
+                        "cpn": 1,
+                        "id": 1192,
+                        "name": "Combo",
+                        "price": "7.99"
+                    }
+                ]
+            },
+            {
+                "stock": 1,
+                "cpn": 1,
+                "order": 4,
+                "id": 1186,
+                "name": "Juicy Max",
+                "dsc": "Our take...",
+                "price": "3.99",
+                "featured": false,
+                "table_price": 2.99,
+                "allergens": [
+                    "eggs",
+                    "milk"
+                ]
+            },
+            {
+                "stock": 1,
+                "cpn": 1,
+                "order": 5,
+                "id": 1187,
+                "name": "You Make",
+                "dsc": "Filled with beef patty, you choose the toppings",
+                "price": "4.99",
+                "featured": false,
+                "table_price": 3.99,
+                "allergens": [
+                    "eggs",
+                    "milk"
+                ],
+                "options": [
+                    {
+                        "group_id": 6,
+                        "min": 0,
+                        "max": 8,
+                        "price_adjustment": 0.25,
+                        "initially_visible": true
+                    }
+                ]
+            },
+            {
+                "stock": 1,
+                "cpn": 1,
+                "order": 6,
+                "name": "Jim Jam",
+                "dsc": "Meal order burger on its own",
+                "vari": [
+                    {
+                        "id": 1189,
+                        "name": "Burger",
+                        "price": "4.99"
+                    },
+                    {
+                        "id": 1190,
+                        "name": "Meal",
+                        "price": "6.99",
+                        "options": [
+                            {
+                                "group_id": 7,
+                                "min": 0,
+                                "max": 1,
+                                "price_adjustment": 0,
+                                "initially_visible": true
+                            },
+                            {
+                                "group_id": 8,
+                                "min": 0,
+                                "max": 1,
+                                "price_adjustment": 0,
+                                "initially_visible": true
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "stock": 1,
+                "cpn": 1,
+                "order": 7,
+                "id": 1191,
+                "name": "Kamikazi",
+                "dsc": "The flying heat",
+                "price": "3.99",
+                "featured": false,
+                "allergens": [
+                    "gluten",
+                    "mustard",
+                    "peanuts"
+                ],
+                "options": [
+                    {
+                        "group_id": 9,
+                        "min": 0,
+                        "max": 1,
+                        "price_adjustment": 0,
+                        "initially_visible": true
+                    },
+                    {
+                        "group_id": 7,
+                        "min": 1,
+                        "max": 1,
+                        "price_adjustment": 0,
+                        "initially_visible": false,
+                        "revealed_by": [
+                            1
+                        ]
+                    },
+                    {
+                        "group_id": 8,
+                        "min": 1,
+                        "max": 1,
+                        "price_adjustment": 0,
+                        "initially_visible": false,
+                        "revealed_by": [
+                            1
+                        ]
+                    }
+                ]
+            }
+        ]
+    },
+    "Fish": {
+        "description": "Fresh seafood dishes to satisfy your cravings.",
+        "products": [
+            {
+                "id": 350,
+                "name": "Fried Cod",
+                "dsc": "Crispy fried cod served with tartar sauce",
+                "price": "11.95",
+                "img": "",
+                "stock": 1,
+                "cpn": 1,
+                "order": 1
+            },
+            {
+                "id": 351,
+                "name": "Grilled Shrimp",
+                "dsc": "Juicy grilled shrimp with garlic butter",
+                "price": "13.95",
+                "img": "",
+                "stock": 1,
+                "cpn": 1,
+                "order": 2,
+                "allergens": [
+                    "gluten",
+                    "milk",
+                    "eggs",
+                    "sesame"
+                ]
+            }
+        ]
+    },
+    "Salads": {
+        "description": "Fresh and healthy salads made with the finest ingredients.",
+        "products": [
+            {
+                "id": 400,
+                "name": "Caesar Salad",
+                "dsc": "Crisp romaine lettuce with Caesar dressing, croutons, and Parmesan cheese",
+                "price": "6.95",
+                "img": "",
+                "stock": 1,
+                "cpn": 1,
+                "order": 1
+            },
+            {
+                "id": 401,
+                "name": "Greek Salad",
+                "dsc": "Mixed greens with feta cheese, olives, cucumbers, and tomatoes",
+                "price": "7.50",
+                "img": "",
+                "stock": 1,
+                "cpn": 1,
+                "order": 2
+            }
+        ]
+    },
+    "Sides": {
+        "description": "The perfect accompaniments to your meal.",
+        "products": [
+            {
+                "id": 100,
+                "name": "Garlic Bread",
+                "dsc": "Freshly baked garlic bread",
+                "price": "3.50",
+                "cpn": 1,
+                "order": 1,
+                "img": "",
+                "stock": 0
+            },
+            {
+                "name": "Chicken",
+                "dsc": "Succulent Grilled Chicken",
+                "vari": [
+                    {
+                        "id": 58,
+                        "name": "Whole",
+                        "price": "12.45",
+                        "cpn": 1,
+                        "order": 3,
+                        "options": [],
+                        "stock": 1
+                    },
+                    {
+                        "id": 1181,
+                        "name": "Whole Meal",
+                        "price": "15.45",
+                        "cpn": 1,
+                        "order": 3,
+                        "featured": true,
+                        "options": [
+                            {
+                                "group_id": 1,
+                                "min": 1,
+                                "max": 1,
+                                "price_adjustment": 0,
+                                "initially_visible": true
+                            },
+                            {
+                                "group_id": 2,
+                                "min": 0,
+                                "max": 1,
+                                "price_adjustment": 0,
+                                "initially_visible": true
+                            },
+                            {
+                                "group_id": 5,
+                                "min": 1,
+                                "max": 3,
+                                "price_adjustment": 0,
+                                "initially_visible": false,
+                                "revealed_by": [
+                                    5
+                                ]
+                            },
+                            {
+                                "group_id": 6,
+                                "min": 0,
+                                "max": 5,
+                                "price_adjustment": 0,
+                                "initially_visible": true
+                            },
+                            {
+                                "group_id": 7,
+                                "min": 0,
+                                "max": 0,
+                                "price_adjustment": 0,
+                                "initially_visible": true
+                            }
+                        ],
+                        "stock": 1
+                    },
+                    {
+                        "id": 60,
+                        "name": "Quarter",
+                        "price": "5.25",
+                        "cpn": 1,
+                        "order": 3,
+                        "options": [],
+                        "stock": 0
+                    }
+                ]
+            },
+            {
+                "id": 1005,
+                "name": "Weekend Special",
+                "price": "12.95",
+                "stock": 1,
+                "cpn": 1,
+                "availability": {
+                    "days": [
+                        "Sat",
+                        "Sun"
+                    ]
+                }
+            },
+            {
+                "id": 1006,
+                "name": "Evening Special",
+                "price": "12.95",
+                "dsc": "Available mid-week evenings",
+                "stock": 1,
+                "cpn": 1,
+                "availability": {
+                    "days": [
+                        "Thu"
+                    ]
+                }
+            },
+            {
+                "id": 1007,
+                "name": "Very Special",
+                "price": "12.95",
+                "dsc": "Always available special",
+                "stock": 1,
+                "cpn": 1
+            }
+        ]
+    },
+    "Desserts": {
+        "description": "End your meal on a sweet note with our desserts.",
+        "products": [
+            {
+                "id": 300,
+                "name": "Chocolate Brownie",
+                "dsc": "Rich chocolate brownie served with ice cream",
+                "price": "4.00",
+                "img": "",
+                "stock": 1,
+                "cpn": 1,
+                "order": 1
+            },
+            {
+                "id": 301,
+                "name": "Ice Cream Sundae",
+                "dsc": "Vanilla ice cream with chocolate sauce and nuts",
+                "price": "3.50",
+                "img": "",
+                "stock": 1,
+                "cpn": 1,
+                "order": 2
+            },
+            {
+                "stock": 1,
+                "cpn": 1,
+                "order": 3,
+                "name": "Caramel Tart",
+                "dsc": "For dessert",
+                "vari": [
+                    {
+                        "id": 1194,
+                        "name": "Small",
+                        "price": "3.99"
+                    },
+                    {
+                        "id": 1195,
+                        "name": "Large",
+                        "price": "4.99"
+                    }
+                ]
+            }
+        ]
+    },
+    "Drinks": {
+        "description": "Refresh yourself with our selection of drinks.",
+        "products": [
+            {
+                "id": 200,
+                "name": "Coca-Cola Can",
+                "dsc": "330ml can of Coca-Cola",
+                "price": "1.50",
+                "img": "",
+                "stock": 1,
+                "cpn": 1,
+                "order": 1
+            },
+            {
+                "id": 201,
+                "name": "Diet Coke Can",
+                "dsc": "330ml can of Diet Coke",
+                "price": "1.50",
+                "img": "",
+                "stock": 1,
+                "cpn": 1,
+                "order": 2
+            }
+        ]
+    },
+    "Hot Drinks": {
+        "description": "Warm up with our selection of hot beverages.",
+        "products": [
+            {
+                "id": 250,
+                "name": "Espresso",
+                "dsc": "Strong and bold espresso shot",
+                "price": "2.00",
+                "img": "",
+                "stock": 1,
+                "cpn": 1,
+                "order": 1
+            },
+            {
+                "id": 251,
+                "name": "Cappuccino",
+                "dsc": "Espresso with steamed milk and foam",
+                "price": "2.50",
+                "img": "",
+                "stock": 1,
+                "cpn": 1,
+                "order": 2
+            }
+        ]
+    },
+    "New Cat": {
+        "description": "A category test",
+        "products": []
+    }
+}
