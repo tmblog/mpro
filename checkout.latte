@@ -1,0 +1,3331 @@
+{extends '../layouts/main.latte'}
+
+{block title}{if $table_mode ?? false}Table Order{else}Checkout{/if}{/block}
+
+{block head}
+{if $table_mode ?? false}
+<meta name="robots" content="noindex, nofollow">
+<script>
+    window.TABLE_MODE = true;
+    window.ORDER_METHOD = {$table_methods[0] ?? 'table'};
+</script>
+{/if}
+<style>
+/* Sticky Order Summary */
+.order-summary-sticky {
+    position: sticky;
+    top: 0;
+}
+
+.checkout-cart-item {
+    padding: 0.75rem 0;
+    border-bottom: 0.0625rem solid #dee2e6;
+}
+
+.checkout-cart-item:last-child {
+    border-bottom: none;
+}
+
+/* Promo Tags */
+.promo-tag {
+    display: inline-block;
+    background: #d1e7dd;
+    color: #0f5132;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.875rem;
+    margin-right: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.promo-tag .btn-close {
+    font-size: 0.625rem;
+    padding: 0;
+    margin-left: 0.5rem;
+}
+
+.promo-removed {
+    background: #f8d7da;
+    color: #842029;
+}
+
+/* Address Options */
+.address-option {
+    cursor: pointer;
+    transition: border-color 0.15s ease-in-out;
+}
+
+.address-option:hover {
+    border-color: #0d6efd !important;
+}
+
+.address-option.selected {
+    border-color: #0d6efd !important;
+    background-color: #f8f9ff;
+}
+
+/* Summary collapse icon rotation */
+[aria-expanded="true"] #summaryCollapseIcon {
+    transform: rotate(180deg);
+}
+
+#summaryCollapseIcon {
+    transition: transform 0.2s ease;
+}
+
+/* Disable collapse behaviour on desktop */
+@media (min-width: 768px) {
+    .card-header[data-bs-toggle="collapse"] {
+        cursor: default;
+        pointer-events: none;
+    }
+}
+
+/* Itemised discount rows */
+.discount-item-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+    color: #198754;
+    font-size: 0.875rem;
+}
+
+.discount-item-row .discount-label {
+    max-width: 70%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.checkout-cards {
+    border-radius: 0; !important;
+    margin-bottom: 0.5rem; !important;
+}
+
+/* Checkout submit button layout */
+#placeOrderBtn {
+    display: flex;
+    align-items: center;
+}
+
+#placeOrderBtn .btn-col {
+    flex: 1;
+}
+
+#placeOrderBtn .btn-col:first-child {
+    text-align: left;
+}
+
+#placeOrderBtn .btn-col-center {
+    text-align: center;
+}
+
+#placeOrderBtn .btn-col-right {
+    text-align: right;
+}
+
+@media (min-width: 768px) {
+    .border-end-md {
+        border-right: 1px solid var(--bs-border-color) !important;
+    }
+    .border-top-md-0 {
+        border-top: none !important;
+    }
+}
+</style>
+{/block}
+
+{block content}
+<div class="checkout-page">
+    <section class="bg-light border-bottom py-1">
+        <div class="container">
+            <h1>Secure Checkout</h1>
+        </div>
+    </section>
+    <div class="container py-4">
+        <div class="row">
+            {* Left Column: Checkout Form *}
+            <div class="col-md-7 order-2 order-md-1 mb-4">
+                {* Shop Status Alert *}
+                {if !$shop_status['isOpen']}
+                <div class="alert alert-danger" id="shopClosedAlert">
+                    <i class="bi bi-x-circle me-2"></i>
+                    <strong>Shop Closed</strong> - {$shop_status['message']}
+                </div>
+                {elseif empty($available_methods['methods']) && !($table_mode ?? false)}
+                <div class="alert alert-warning" id="shopClosedAlert">
+                    <i class="bi bi-clock me-2"></i>
+                    <strong>Ordering Unavailable</strong> - Please check back later
+                    {if $shop_status['opensAt']}
+                        (Opens at {$shop_status['opensAt']})
+                    {/if}
+                </div>
+                {elseif $available_methods['preOrderOnly']}
+                <div class="alert alert-info" id="preOrderAlert">
+                    <i class="bi bi-clock-history me-2"></i>
+                    {$available_methods['message']}
+                </div>
+                {/if}
+                {* Sign In Prompt for Guests *}
+                {if !$is_logged_in}
+                <div class="alert alert-secondary border mb-4">
+                    <div class="d-flex align-items-start">
+                        <i class="bi bi-person-circle me-3 text-primary" style="font-size: 1.5rem;"></i>
+                        <div class="flex-grow-1">
+                            <strong>Already have an account? </strong>
+                            <a href="{$base_path}/account/login?redirect=/checkout">Sign in</a> or 
+                            <a href="{$base_path}/account/register">create one</a> for a faster checkout.
+                            <ul class="mb-0 mt-2 small">
+                                {if $site['features']['loyalty'] ?? false}
+                                <li><i class="bi bi-star-fill text-warning me-1"></i>Earn loyalty points</li>
+                                {/if}
+                                {if $site['features']['stamp_cards'] ?? false}
+                                <li><i class="bi bi-grid-3x3-gap-fill text-success me-1"></i>Collect stamps towards rewards</li>
+                                {/if}
+                                {if $site['features']['favorites'] ?? false}
+                                <li><i class="bi bi-heart-fill text-danger me-1"></i>Save favourites for quick re-ordering</li>
+                                {/if}
+                                <li><i class="bi bi-clock-history text-primary me-1"></i>Faster checkout with saved details</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                {/if}
+                
+                <form id="checkoutForm" class="needs-validation" novalidate onsubmit="CheckoutManager.submitCheckout(event)">
+                    <input type="hidden" name="csrf_token" value="{$csrf_token}">
+                    <input type="hidden" name="cart" id="cartDataInput">
+                    <input type="hidden" name="delivery_method" id="deliveryMethodInput">
+                    <input type="hidden" name="promo_codes" id="promoCodesInput">
+                    <input type="hidden" name="points_to_redeem" id="pointsToRedeemInput" value="0">
+
+                    {* Hidden fields for address - always present, populated by JS *}
+                    <input type="hidden" name="address_1" id="finalAddress1">
+                    <input type="hidden" name="address_2" id="finalAddress2">
+                    <input type="hidden" name="postcode" id="finalPostcode">
+
+                    {* Uber quote data - populated by JS when Uber Direct is enabled *}
+                    <input type="hidden" name="uber_quote_id" id="uberQuoteId">
+                    <input type="hidden" name="uber_quote_expires" id="uberQuoteExpires">
+                    <input type="hidden" name="delivery_lat" id="deliveryLat">
+                    <input type="hidden" name="delivery_lng" id="deliveryLng">
+                    {* Table mode hidden fields *}
+                    {if $table_mode ?? false}
+                    <input type="hidden" name="table_mode" value="1">
+                    <input type="hidden" name="table_number" id="tableNumberInput" value="{$table_number ?? ''}">
+                    {/if}
+                    {* 1. Customer Details *}
+                    <div class="card checkout-cards">
+                        <div class="card-header border-0">
+                            <h5 class="mb-0">Customer Details</h5>
+                            {if $is_logged_in && $customer}
+                            <small class="text-muted">Hi {$customer['customer_name']}, we've prefilled your details for a faster checkout experience.</small>
+                            {/if}
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-12">
+                                    <label class="form-label">Name <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" name="name" required minlength="2" value="{$customer['customer_name'] ?? ''}">
+                                    <div class="invalid-feedback">Please enter your name (min 2 characters)</div>
+                                </div>
+                                
+                                <div class="col-md-6">
+                                    <label class="form-label">Email <span class="text-danger">*</span></label>
+                                    {if $is_logged_in}
+                                    <input type="email" class="form-control bg-light" name="email" value="{$customer['customer_email'] ?? ''}" readonly>
+                                    <small class="text-muted"><i class="bi bi-lock-fill me-1"></i>Logged in as this email</small>
+                                    {else}
+                                    <input type="email" class="form-control" name="email" required onblur="CheckoutManager.handleEmailChange(this.value)" value="">
+                                    <div class="invalid-feedback">Please enter a valid email address</div>
+                                    {/if}
+                                </div>
+                                
+                                <div class="col-md-6">
+                                    <label class="form-label">Phone <span class="text-danger">*</span></label>
+                                    <input type="tel" class="form-control" name="phone" id="phoneInput" required 
+                                        placeholder="07XXX XXXXXX" value="{$customer['customer_tel'] ?? ''}">
+                                    <div class="invalid-feedback">Please enter a valid UK phone number</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {* Table Details (table mode only) *}
+                    {if $table_mode ?? false}
+                    <div class="card checkout-cards">
+                        <div class="card-header border-0">
+                            <h5 class="mb-0"><i class="bi bi-grid-3x3-gap me-2"></i>Table Details</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">Table Number</label>
+                                    <div class="form-control-plaintext bg-light rounded px-3 py-2">
+                                        <strong>Table {$table_number}</strong>
+                                    </div>
+                                </div>
+                                {if count($table_methods ?? []) > 1}
+                                <div class="col-md-6">
+                                    <label class="form-label">Order Type</label>
+                                    <div class="btn-group w-100" role="group">
+                                        {foreach $table_methods as $method}
+                                        <input type="radio" class="btn-check" name="delivery_method" 
+                                            id="method_{$method}" value="{$method}" 
+                                            {first}checked{/first}>
+                                        <label class="btn btn-outline-{$method === 'table' ? 'dark' : 'warning'}" for="method_{$method}">
+                                            <i class="bi bi-{$method === 'table' ? 'grid-3x3-gap' : 'bag-check'} me-1"></i>
+                                            {$method === 'table' ? 'Eat In' : 'Collection'}
+                                        </label>
+                                        {/foreach}
+                                    </div>
+                                </div>
+                                {else}
+                                <input type="hidden" name="delivery_method" value="{$table_methods[0] ?? 'table'}">
+                                {/if}
+                            </div>
+                        </div>
+                    </div>
+                    {else} 
+                    {* 2. Delivery/Collection Details *}
+                    <div class="card checkout-cards">
+                        <div class="card-header border-0">
+                            <h5 class="mb-0" id="deliveryCardTitle">Delivery Details</h5>
+                        </div>
+                        <div class="card-body">
+                            {* Unified Delivery Address Section *}
+                            <div id="deliveryAddressSection" 
+                                 data-is-logged-in="{$is_logged_in ? 'true' : 'false'}"
+                                 data-addresses='{$addresses|json}'>
+                                
+                                {* Logged-in: Saved Addresses List OR "Add Address" button *}
+                                <div id="loggedInAddressSection" class="d-none">
+                                    {* Saved addresses radio list *}
+                                    <div id="savedAddressList" class="d-none">
+                                        {* Radio buttons rendered by JS *}
+                                    </div>
+                                    
+                                    {* No addresses yet - prompt to add *}
+                                    <div id="noAddressPrompt" class="d-none">
+                                        <p class="text-muted mb-3">No saved delivery addresses</p>
+                                        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addAddressModal">
+                                            <i class="bi bi-plus-circle me-2"></i>Add Delivery Address
+                                        </button>
+                                    </div>
+                                    
+                                    {* Delivery Fee Display *}
+                                    <div id="deliveryFeeSectionLoggedIn" class="mt-3 pt-3 border-top d-none">
+                                        <div class="d-flex justify-content-between">
+                                            <span>Delivery fee:</span>
+                                            <strong id="deliveryFeeDisplayLoggedIn">-</strong>
+                                        </div>
+                                        <div id="deliveryStatusLoggedIn" class="small text-muted"></div>
+                                    </div>
+                                </div>
+                                
+                                {* Guest: Inline Address Form *}
+                                <div id="guestAddressSection" class="d-none">
+                                    <div class="row g-3">
+                                        <div class="col-12">
+                                            <label class="form-label">Address Line 1 <span class="text-danger">*</span></label>
+                                            <input type="text" class="form-control" id="guestAddressLine1">
+                                            <div class="invalid-feedback">Please enter your address</div>
+                                        </div>
+
+                                        <div class="col-12">
+                                            <label class="form-label">Address Line 2</label>
+                                            <input type="text" class="form-control" id="guestAddressLine2">
+                                        </div>
+
+                                        <div class="col-md-6">
+                                            <label class="form-label">Postcode <span class="text-danger">*</span></label>
+                                            <input type="text" class="form-control" id="guestPostcode"
+                                                   maxlength="8" style="text-transform: uppercase;">
+                                            <div class="invalid-feedback">Please enter a valid postcode</div>
+                                        </div>
+                                        
+                                        <div class="col-md-6 d-flex align-items-end">
+                                            <button type="button" class="btn btn-primary w-100" id="guestValidateBtn">
+                                                <span class="btn-text"><i class="bi bi-check-circle me-1"></i>Check Postcode</span>
+                                                <span class="btn-loading d-none">
+                                                    <span class="spinner-border spinner-border-sm me-1"></span>Checking...
+                                                </span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
+                                    {* Delivery Fee Display for Guest *}
+                                    <div id="deliveryFeeSectionGuest" class="mt-3 pt-3 border-top">
+                                        <div class="d-flex justify-content-between">
+                                            <span>Delivery fee:</span>
+                                            <strong id="deliveryFeeDisplayGuest">-</strong>
+                                        </div>
+                                        <div id="deliveryStatusGuest" class="small text-muted">Enter address and check postcode</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            {* Collection Info *}
+                            <div id="collectionInfoSection" class="d-none">
+                                <div class="alert alert-info mb-0">
+                                    <i class="bi bi-shop me-2"></i>
+                                    <strong>Collect from:</strong><br>
+                                    {$site['address']['line1']}<br>
+                                    {$site['address']['city']}, {$site['address']['postcode']}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {* 3. Time Selection *}
+                    <div class="card checkout-cards">
+                        <div class="card-header border-0">
+                            <h5 class="mb-0">When do you want your order?</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="order_time_type" 
+                                           id="timeAsap" value="asap" checked 
+                                           onchange="CheckoutManager.toggleTimeSelection()">
+                                    <label class="form-check-label" for="timeAsap">
+                                        <strong>ASAP</strong>
+                                        <span class="text-muted" id="asapReadyTime">(Ready in 30 mins)</span>
+                                    </label>
+                                </div>
+                                
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="order_time_type" 
+                                           id="timeScheduled" value="scheduled"
+                                           onchange="CheckoutManager.toggleTimeSelection()">
+                                    <label class="form-check-label" for="timeScheduled">
+                                        <strong>Schedule for later</strong>
+                                        <span class="text-muted">(Same-day only)</span>
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <div id="scheduledTimeSection" class="d-none">
+                                <label class="form-label">Select Time <span class="text-danger">*</span></label>
+                                <select class="form-select" name="scheduled_time" id="scheduledTimeSelect">
+                                    <option value="">Choose a time...</option>
+                                </select>
+                            </div>
+                            <div class="invalid-feedback d-block" id="timeSelectionError" style="display: none !important;">
+                                Please select when you want your order
+                            </div>
+                        </div>
+                    </div>
+                    {/if}
+                    {* 4. Order Notes *}
+                    <div class="card checkout-cards">
+                        <div class="card-header border-0">
+                            <h5 class="mb-0">Special Instructions (Optional)</h5>
+                        </div>
+                        <div class="card-body">
+                            <textarea class="form-control" name="order_notes" rows="3" 
+                                      placeholder="E.g., extra napkins, ring doorbell, allergies..."></textarea>
+                        </div>
+                    </div>
+
+                    {* 5. Tips *}
+                    {if !empty($site['features']['tips'])}
+                    <div class="card checkout-cards">
+                        <div class="card-header border-0">
+                            <h5 class="mb-0">Add a Tip? (Optional)</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="btn-group w-100 mb-2" role="group">
+                                <input type="radio" class="btn-check" name="tip_amount" id="tipNone" value="0" checked>
+                                <label class="btn btn-outline-secondary" for="tipNone">No Tip</label>
+                                
+                                <input type="radio" class="btn-check" name="tip_amount" id="tip1" value="1">
+                                <label class="btn btn-outline-secondary" for="tip1">£1</label>
+                                
+                                <input type="radio" class="btn-check" name="tip_amount" id="tip2" value="2">
+                                <label class="btn btn-outline-secondary" for="tip2">£2</label>
+                                
+                                <input type="radio" class="btn-check" name="tip_amount" id="tip3" value="3">
+                                <label class="btn btn-outline-secondary" for="tip3">£3</label>
+                                
+                                <input type="radio" class="btn-check" name="tip_amount" id="tip5" value="5">
+                                <label class="btn btn-outline-secondary" for="tip5">£5</label>
+                            </div>
+                            
+                            <div class="input-group">
+                                <span class="input-group-text">£</span>
+                                <input type="number" class="form-control" id="tipCustom" 
+                                       placeholder="Custom amount" min="0" max="50" step="0.5"
+                                       onchange="CheckoutManager.setCustomTip(this.value)">
+                            </div>
+                        </div>
+                    </div>
+                    {/if}
+                    
+                    {* 7. Payment Method *}
+                    <div class="card checkout-cards">
+                        <div class="card-header border-0">
+                            <h5 class="mb-0">Payment Method</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="radio" name="payment_method" 
+                                       id="payCard" value="card" checked>
+                                <label class="form-check-label" for="payCard">
+                                    <i class="bi bi-credit-card me-1"></i> Pay by Card
+                                </label>
+                            </div>
+                            
+                            <div class="form-check" id="cashOptionWrapper">
+                                <input class="form-check-input" type="radio" name="payment_method" 
+                                       id="payCash" value="cash">
+                                <label class="form-check-label" for="payCash">
+                                    <i class="bi bi-cash me-1"></i> Pay by Cash (Collection only)
+                                </label>
+                            </div>
+                            <div class="invalid-feedback d-block" id="paymentMethodError" style="display: none !important;">
+                                Please select a payment method
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {* 8. Terms *}
+                    <div class="card checkout-cards">
+                        <div class="card-body">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="terms_accepted" id="termsCheck" required>
+                                <label class="form-check-label" for="termsCheck">
+                                    I accept the <a href="/terms" target="_blank">Terms & Conditions</a>
+                                </label>
+                                <div class="invalid-feedback">You must accept the terms and conditions</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {* Account Exists Alert (hidden by default, shown by JS) *}
+                    <div id="accountExistsWrapper" class="mb-3">
+                        <div id="accountExistsAlert" class="card border-warning d-none" style="transition: opacity 0.3s ease;">
+                            <div class="card-header bg-warning-subtle border-warning py-2">
+                                <i class="bi bi-person-exclamation me-2"></i>
+                                <strong>You already have an account!</strong>
+                            </div>
+                            <div class="card-body p-0">
+                                <div class="row g-0">
+                                    {* Login Option *}
+                                    <div class="col-12 col-md-6 p-3 border-end-md">
+                                        <div class="d-flex flex-column h-100">
+                                            <div class="d-flex align-items-center mb-2">
+                                                <i class="bi bi-box-arrow-in-right text-primary fs-4 me-2"></i>
+                                                <h6 class="mb-0">Login Now</h6>
+                                            </div>
+                                            <ul class="small text-muted mb-3 ps-3 flex-grow-1">
+                                                {if $site['features']['loyalty'] ?? false}
+                                                <li>Earn loyalty points on this order</li>
+                                                <li>Redeem any loyalty points on this order</li>
+                                                {/if}
+                                                <li>Quick reorder</li>
+                                                <li>Access saved addresses/payment methods</li>
+                                            </ul>
+                                            <a href="{$base_path}/account/login?redirect=/checkout" class="btn btn-primary btn-sm">
+                                                <i class="bi bi-box-arrow-in-right me-1"></i> Login
+                                            </a>
+                                        </div>
+                                    </div>
+                                    {* Guest Option *}
+                                    <div class="col-12 col-md-6 p-3 border-top border-top-md-0">
+                                        <div class="d-flex flex-column h-100">
+                                            <div class="d-flex align-items-center mb-2">
+                                                <i class="bi bi-person-walking text-secondary fs-4 me-2"></i>
+                                                <h6 class="mb-0 fw-bold">Continue as Guest</h6>
+                                            </div>
+                                            <p class="small text-muted mb-3 flex-grow-1">
+                                                Complete your order now and link it to your account afterwards to claim any rewards.
+                                            </p>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="CheckoutManager.continueAsGuest()">
+                                                <i class="bi bi-arrow-right me-1"></i> Continue as Guest
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="guestContinueMsg" class="alert alert-light border d-none text-center small py-2" style="transition: opacity 0.3s ease; opacity: 0;">
+                            <i class="bi bi-check-circle text-success me-1"></i>
+                            Continuing as guest - press <strong>Place Order</strong> to continue
+                        </div>
+                    </div>
+                    
+                    {* Submit Button (Desktop) *}
+                        <button type="submit" class="btn btn-success btn-lg w-100" id="placeOrderBtn">
+                            <span class="btn-col"><i class="bi bi-check-circle"></i></span>
+                            <span class="btn-col btn-col-center">Place Order</span>
+                            <span class="btn-col btn-col-right"><span id="finalTotalDesktop">£0.00</span></span>
+                        </button>
+
+                </form>
+            </div>
+            
+            {* Right Column: Order Summary (Desktop Sticky) *}
+            <div class="col-md-5 order-1 order-md-2 mb-3 mb-md-0">
+                <div class="">
+                    <div class="card checkout-cards">
+                        <div class="card-header border-0 d-flex justify-content-between align-items-center" 
+                             role="button" 
+                             data-bs-toggle="collapse" 
+                             data-bs-target="#orderSummaryCollapse"
+                             aria-expanded="false"
+                             aria-controls="orderSummaryCollapse">
+                            <div>
+                                <h5 class="mb-0 d-inline">Summary</h5>
+                                <span class="text-muted ms-2 small" id="summaryItemCount"></span>
+                                <div class="small text-success d-md-none d-none" id="summaryDiscountTeaser">
+                                    <i class="bi bi-tag-fill me-1"></i><span id="summaryDiscountTeaserText"></span>
+                                </div>
+                            </div>
+                            <div class="d-flex align-items-center">
+                                <strong class="text-primary me-2 d-md-none" id="summaryTotalBadge">£0.00</strong>
+                                <i class="bi bi-chevron-down d-md-none" id="summaryCollapseIcon"></i>
+                            </div>
+                        </div>
+                        <div class="collapse d-md-block" id="orderSummaryCollapse">
+                            <div class="card-body">
+                                {* Cart Items *}
+                                <div id="checkoutCartItems" class="overflow-auto" style="max-height: 15.75rem;">
+                                    {* Populated by JS *}
+                                </div>
+                                
+                                {* Totals Breakdown *}
+                                <div class="border-top pt-3">
+                                    <div class="d-flex justify-content-between mb-2">
+                                        <span>Subtotal</span>
+                                        <strong id="subtotalDisplay">£0.00</strong>
+                                    </div>
+                                    
+                                    <div class="d-flex justify-content-between mb-2 d-none" id="deliveryFeeRow">
+                                        <span>Delivery</span>
+                                        <strong id="deliveryFeeTotal">£0.00</strong>
+                                    </div>
+                                    
+                                    <div class="d-flex justify-content-between mb-2 d-none" id="tipRow">
+                                        <span>Tip</span>
+                                        <strong id="tipTotal">£0.00</strong>
+                                    </div>
+                                    
+                                    <div id="discountItemsContainer">
+                                        {* Individual discount rows populated by JS *}
+                                    </div>
+
+                                    <div class="d-flex justify-content-between mb-2 text-success d-none" id="pointsDiscountRow">
+                                        <span>Points Discount</span>
+                                        <strong id="pointsDiscountTotal">-£0.00</strong>
+                                    </div>
+                                    
+                                    <div class="border-top pt-3 mt-3">
+                                        <div class="d-flex justify-content-between">
+                                            <h5 class="mb-0">Total</h5>
+                                            <h5 class="mb-0 text-primary" id="finalTotal">£0.00</h5>
+                                        </div>
+                                    </div>
+                                    
+                                </div>
+                                
+                                {* Promo Progress Messages *}
+                                <div id="promoProgressSection" class="border-top pt-3 mt-3 d-none">
+                                    <div id="promoProgressMessages" class="small">
+                                        {* "Spend £X more for Y" messages - populated by JS *}
+                                    </div>
+                                </div>
+
+                                {* Points Earning Info *}
+                                {if !empty($site['features']['loyalty'])}
+                                <div class="border-top pt-3 mt-3">
+                                    <small class="text-muted">
+                                        <i class="bi bi-star-fill text-warning me-1"></i>
+                                        You'll earn <strong id="pointsEarnedStub">0</strong> points
+                                        {if $loyalty_redemption && $loyalty_redemption['bonus_multiplier'] > 1}
+                                            <span class="badge bg-warning text-dark ms-1">{$loyalty_redemption['bonus_multiplier']}x bonus!</span>
+                                        {/if}
+                                    </small>
+                                </div>
+                                {/if}
+
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card mt-1 checkout-cards bg-light">
+                        <div class="card-body">
+                            {* Promo Code Input *}
+                            <div class="input-group input-group-sm">
+                                <input type="text" class="form-control" id="promoCodeInput" 
+                                    placeholder="Promo code">
+                                <button class="btn btn-outline-primary" type="button" 
+                                        onclick="CheckoutManager.applyPromoCode()">
+                                    Apply
+                                </button>
+                            </div>
+                            <div id="promoFeedback" class="small mt-2 d-none"></div>
+                            
+                            {* Points Redemption (moved here for visibility) *}
+                            {if $is_logged_in && !empty($site['features']['loyalty']) && $loyalty_redemption && $loyalty_redemption['can_redeem']}
+                            <div class="border-top pt-3 mt-3" id="pointsRedemptionSection">
+                                <div class="form-check form-switch mb-2">
+                                    <input class="form-check-input" type="checkbox" id="usePointsToggle" onchange="CheckoutManager.togglePointsRedemption()">
+                                    <label class="form-check-label" for="usePointsToggle">
+                                        <strong>Use points</strong>
+                                        <span class="text-muted">({number_format($loyalty_redemption['customer_balance'], 0)} available)</span>
+                                    </label>
+                                </div>
+                                
+                                <div id="pointsSliderContainer" class="d-none">
+                                    <input type="range" class="form-range" id="pointsSlider"
+                                        min="{$loyalty_redemption['min_points']}"
+                                        max="{$loyalty_redemption['max_points']}"
+                                        step="{$loyalty_redemption['increment']}"
+                                        value="{$loyalty_redemption['min_points']}"
+                                        oninput="CheckoutManager.updatePointsSlider(this.value)">
+                                    <div class="d-flex justify-content-between small">
+                                        <span id="pointsSliderValue">{number_format($loyalty_redemption['min_points'], 0)} points</span>
+                                        <span id="pointsDiscountValue" class="text-success fw-bold">-£{number_format($loyalty_redemption['min_points'] / $loyalty_redemption['increment'], 2)}</span>
+                                    </div>
+                                </div>
+                                
+                                <div id="pointsPromoConflict" class="small text-warning mt-2 d-none">
+                                    <i class="bi bi-info-circle me-1"></i>
+                                    <span id="pointsPromoConflictText"></span>
+                                </div>
+
+                                <div id="pointsActiveNote" class="small text-info mt-2 d-none">
+                                    <i class="bi bi-info-circle me-1"></i>
+                                    Promos disabled. <a href="#" onclick="CheckoutManager.restorePromos(); return false;">Restore</a>
+                                </div>
+                            </div>
+                            {/if}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{* Add Address Modal (for logged-in users) *}
+<div class="modal fade" id="addAddressModal" tabindex="-1" aria-labelledby="addAddressModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addAddressModalLabel">Add Delivery Address</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Address Line 1 <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="modalAddressLine1" required>
+                    <div class="invalid-feedback">Please enter your address</div>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Address Line 2</label>
+                    <input type="text" class="form-control" id="modalAddressLine2">
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Postcode <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="modalPostcode" required
+                           maxlength="8" style="text-transform: uppercase;">
+                    <div class="invalid-feedback">Please enter a valid postcode</div>
+                </div>
+                
+                <div id="modalPostcodeStatus"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="modalSaveAddressBtn">
+                    <span class="btn-text"><i class="bi bi-check-circle me-1"></i>Validate & Save</span>
+                    <span class="btn-loading d-none">
+                        <span class="spinner-border spinner-border-sm me-1"></span>Saving...
+                    </span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{/block}
+
+{block scripts}
+{var $loyaltyStackable = $loyalty_config && ($loyalty_config['stackableWithPromos'] ?? false)}
+{var $loyaltyCanRedeem = $loyalty_redemption && ($loyalty_redemption['can_redeem'] ?? false)}
+{var $siteFeatures = ['offers' => !empty($site['features']['offers'])]}
+
+<script>
+const LOYALTY_EARN_RATE = {$loyalty_config['earnRate'] ?? 5};
+const LOYALTY_REDEMPTION_RATE = {$loyalty_config['redemptionRate'] ?? 100};
+const LOYALTY_DEFAULT_STACKABLE = {$loyaltyStackable ? true : false};
+const LOYALTY_BONUS_MULTIPLIER = {$loyalty_redemption['bonus_multiplier'] ?? 1};
+const LOYALTY_CAN_REDEEM = {$loyaltyCanRedeem ? true : false};
+const LOYALTY_POINTS_BALANCE = {$loyalty_redemption['customer_balance'] ?? 0};
+const LOYALTY_MIN_REDEEM = {$loyalty_redemption['min_points'] ?? 100};
+const AUTO_PROMOS_CONFIG = {$auto_promos|json|noescape};
+window.SITE_FEATURES = {$siteFeatures|json|noescape};
+window.ACTIVE_OFFERS = {$active_offers|json|noescape};
+window.UBER_DIRECT_ENABLED = {!empty($site['features']['uber_direct']) ? true : false};
+
+document.addEventListener('DOMContentLoaded', () => {
+    Cart.enforceOfferRules();
+});
+
+const READY_TIMES = {
+    delivery: {$ready_times['delivery']},
+    collection: {$ready_times['collection']}
+};
+</script>
+{if !empty($site['features']['uber_direct'])}
+<script src="{$base_path}/assets/js/uber.js"></script>
+{/if}
+
+<script src="{$base_path}/assets/js/offers.js"></script>
+<script n:syntax=off>
+const CheckoutManager = {
+    state: {
+        cart: [],
+        deliveryMethod: null,
+        deliveryFee: 0,
+        postcodeData: null,
+        appliedPromos: [],
+        autoPromos: [],
+        removedPromos: [],
+        tipAmount: 0,
+        pointsToRedeem: 0,
+        pointsDiscount: 0,
+        pointsOverridePromos: false,
+        removedForPoints: [],
+        totals: {
+            subtotal: 0,
+            deliveryFee: 0,
+            tip: 0,
+            discount: 0,
+            final: 0
+        },
+        continueAsGuestOverride: false,
+        // Address state
+        isLoggedIn: false,
+        addresses: [],
+        selectedAddressId: null,
+        addressValidated: false,
+        shopClosed: false,
+        methodUnavailable: false,
+        previousSelectedAddress: null
+    },
+
+    init() {
+    // Load cart from localStorage
+    this.state.cart = Cart.get();
+    
+    if (this.state.cart.length === 0) {
+        window.location.href = BASE_PATH + (window.TABLE_MODE ? '/table' : '/order-online');
+        return;
+    }
+    
+    // Load delivery method from sessionStorage
+    if (window.TABLE_MODE) {
+        this.state.deliveryMethod = document.querySelector('input[name="delivery_method"]:checked')?.value || 'table';
+    } else {
+        this.state.deliveryMethod = sessionStorage.getItem('selected_method');
+        this.updateAsapReadyTime();
+        if (!this.state.deliveryMethod) {
+            Swal.fire({
+                icon: 'error',
+                title: 'No Delivery Method',
+                text: 'Please select delivery or collection first',
+                confirmButtonText: 'Go Back'
+            }).then(() => {
+                window.location.href = BASE_PATH + '/order-online';
+            });
+            return;
+        }
+    }
+    
+    // Load postcode data from session
+    if (!window.TABLE_MODE) {
+        const storedPostcode = sessionStorage.getItem('postcode_data');
+        if (storedPostcode) {
+            this.state.postcodeData = JSON.parse(storedPostcode);
+        }
+    }
+
+    // Restore continue as guest flag if email matches
+    const guestEmail = sessionStorage.getItem('continue_as_guest_email');
+    const emailField = document.getElementById('email');
+    if (guestEmail && emailField && guestEmail === emailField.value) {
+        this.state.continueAsGuestOverride = true;
+    }
+    
+    // Read address config from data attributes
+    if (!window.TABLE_MODE) {
+        const addressSection = document.getElementById('deliveryAddressSection');
+        this.state.isLoggedIn = addressSection.dataset.isLoggedIn === 'true';
+        try {
+            this.state.addresses = JSON.parse(addressSection.dataset.addresses || '[]');
+        } catch (e) {
+            this.state.addresses = [];
+        }
+    }
+    
+    // Check shop/method availability
+    this.checkInitialAvailability();
+    
+    // Update UI based on method
+    if (!window.TABLE_MODE) {
+        this.updateDeliveryUI();
+    }
+    
+    // Populate cart items
+    this.renderCartItems();
+    
+    // Load time slots
+    if (!window.TABLE_MODE) {
+        this.loadTimeSlots();
+    }
+    
+    if (!window.TABLE_MODE && this.state.deliveryMethod === 'delivery' && this.state.postcodeData?.deliveryFee) {
+        this.state.deliveryFee = this.state.postcodeData.deliveryFee;
+    }
+
+    // Calculate totals
+    this.calculateTotals();
+    
+    // Auto-apply promos
+    this.checkAutoPromos();
+
+    // Validate cart availability + minimum order
+    this.validateCartOnLoad();
+    
+    // Initialize address handling
+    if (!window.TABLE_MODE) {
+        this.initAddressHandling();
+    }
+
+    // Initialize Uber quote handling (if enabled and delivery)
+    if (!window.TABLE_MODE) {
+        this.initUberQuote();
+    }
+
+    // Set cart data in hidden input
+    document.getElementById('cartDataInput').value = JSON.stringify(this.state.cart);
+    document.getElementById('deliveryMethodInput').value = this.state.deliveryMethod;
+    
+    // Listen for tip changes
+    document.querySelectorAll('input[name="tip_amount"]').forEach(input => {
+        input.addEventListener('change', () => {
+            this.state.tipAmount = parseFloat(input.value);
+            document.getElementById('tipCustom').value = '';
+            this.calculateTotals();
+        });
+    });
+
+    // Add phone validation listener
+    const phoneInput = document.getElementById('phoneInput');
+    if (phoneInput) {
+        phoneInput.addEventListener('input', () => this.validatePhone(phoneInput));
+        phoneInput.addEventListener('blur', () => this.validatePhone(phoneInput));
+    }
+
+    // Listen for payment method changes
+    document.querySelectorAll('input[name="payment_method"]').forEach(input => {
+        input.addEventListener('change', () => this.updateSubmitButton());
+    });
+
+    // Set initial button text
+    this.updateSubmitButton();
+},
+
+    // ========================================
+    // CART VALIDATION
+    // ========================================
+
+    async validateCartOnLoad() {
+        const cart = Cart.get();
+        if (!cart.length) return;
+        
+        try {
+            const response = await fetch(`${BASE_PATH}/checkout/validate-cart`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    items: cart,
+                    method: this.state.deliveryMethod
+                })
+            });
+            
+            const result = await response.json();
+            
+            // Handle unavailable items
+            if (result.unavailable && result.unavailable.length > 0) {
+                const productIds = result.unavailable.map(u => u.product_id);
+                const names = result.unavailable.map(u => u.product_name);
+                
+                // Remove from cart
+                Cart.removeByProductIds(productIds);
+                
+                // Update our state
+                this.state.cart = Cart.get();
+                document.getElementById('cartDataInput').value = JSON.stringify(this.state.cart);
+                
+                // Show message
+                const swalResult = await Swal.fire({
+                    icon: 'warning',
+                    title: 'Items Unavailable',
+                    html: `The following items are no longer available and have been removed:<br><br><strong>${names.join('<br>')}</strong>`,
+                    showCancelButton: true,
+                    confirmButtonText: 'Continue Checkout',
+                    cancelButtonText: 'Go to Menu',
+                    confirmButtonColor: '#198754',
+                    cancelButtonColor: '#6c757d'
+                });
+                
+                if (swalResult.dismiss === Swal.DismissReason.cancel) {
+                    window.location.href = `${BASE_PATH}/order-online`;
+                    return;
+                }
+                
+                // If cart now empty, redirect
+                if (this.state.cart.length === 0) {
+                    Swal.fire({
+                        icon: 'info',
+                        title: 'Cart Empty',
+                        text: 'All items were unavailable. Please add items to your cart.',
+                        confirmButtonText: 'Go to Menu'
+                    }).then(() => {
+                        window.location.href = `${BASE_PATH}/order-online`;
+                    });
+                    return;
+                }
+                
+                // Re-render cart
+                this.renderCartItems();
+                this.calculateTotals();
+            }
+            
+            // Check minimum order
+            if (result.below_minimum) {
+                this.showMinimumOrderWarning(result.min_order, result.valid_subtotal);
+            }
+            
+        } catch (error) {
+            console.error('Cart validation failed:', error);
+        }
+    },
+
+    showMinimumOrderWarning(minOrder, currentTotal) {
+        const shortfall = (minOrder - currentTotal).toFixed(2);
+        
+        Swal.fire({
+            icon: 'warning',
+            title: 'Minimum Order Not Met',
+            html: `Minimum order for ${this.state.deliveryMethod} is <strong>£${minOrder.toFixed(2)}</strong>.<br>Your cart total is <strong>£${currentTotal.toFixed(2)}</strong>.<br><br>Please add <strong>£${shortfall}</strong> more to continue.`,
+            showCancelButton: true,
+            confirmButtonText: 'Add More Items',
+            cancelButtonText: 'Switch to Collection',
+            confirmButtonColor: '#0d6efd',
+            cancelButtonColor: '#6c757d'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                window.location.href = `${BASE_PATH}/order-online`;
+            } else if (result.dismiss === Swal.DismissReason.cancel) {
+                // Switch to collection
+                sessionStorage.setItem('selected_method', 'collection');
+                window.location.reload();
+            }
+        });
+        
+        // Disable submit button
+        this.disableCheckout(`Add £${shortfall} more for ${this.state.deliveryMethod}`);
+    },
+
+    // ========================================
+    // ADDRESS HANDLING
+    // ========================================
+    
+    initAddressHandling() {
+        // Only setup if delivery method
+        if (this.state.deliveryMethod !== 'delivery') return;
+        
+        if (this.state.isLoggedIn) {
+            // Show logged-in section
+            document.getElementById('loggedInAddressSection').classList.remove('d-none');
+            document.getElementById('guestAddressSection').classList.add('d-none');
+            
+            // Setup modal
+            this.initAddressModal();
+            
+            if (this.state.addresses.length > 0) {
+                // Has saved addresses - render radio list
+                this.renderSavedAddresses();
+                document.getElementById('savedAddressList').classList.remove('d-none');
+                document.getElementById('noAddressPrompt').classList.add('d-none');
+                document.getElementById('deliveryFeeSectionLoggedIn').classList.remove('d-none');
+                
+                // Determine which address to select based on sessionStorage
+                setTimeout(() => {
+                    const storedAddressId = this.state.postcodeData?.addressId;
+                    const storedPostcode = this.state.postcodeData?.postcode?.toUpperCase();
+                    let radioToSelect = null;
+                    
+                    if (storedAddressId) {
+                        // User selected a specific address on order-online
+                        radioToSelect = document.querySelector(`input[name="selected_address"][value="${storedAddressId}"]`);
+                    }
+                    
+                    if (!radioToSelect && storedPostcode) {
+                        // No addressId but have postcode - check if it matches any saved address
+                        const allRadios = document.querySelectorAll('input[name="selected_address"]');
+                        for (const radio of allRadios) {
+                            if (radio.value !== 'new' && radio.dataset.postcode?.toUpperCase() === storedPostcode) {
+                                radioToSelect = radio;
+                                break;
+                            }
+                        }
+                        
+                        // If no match found, user entered a custom postcode - open modal
+                        if (!radioToSelect) {
+                            const newAddressRadio = document.getElementById('address_new');
+                            if (newAddressRadio) {
+                                newAddressRadio.checked = true;
+                                // Pre-fill modal and open it
+                                document.getElementById('modalPostcode').value = this.state.postcodeData.postcode;
+                                const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('addAddressModal'));
+                                modal.show();
+                            }
+                            return;
+                        }
+                    }
+                    
+                    // Default to first address if nothing matched
+                    if (!radioToSelect) {
+                        radioToSelect = document.querySelector('input[name="selected_address"]:first-of-type');
+                    }
+                    
+                    if (radioToSelect && radioToSelect.value !== 'new') {
+                        radioToSelect.checked = true;
+                        
+                        const addressPostcode = radioToSelect.dataset.postcode?.toUpperCase();
+                        
+                        // If postcode matches sessionStorage, use cached data (no re-validation)
+                        if (addressPostcode === storedPostcode && this.state.postcodeData?.validated) {
+                            // Just populate hidden fields, use existing fee
+                            this.populateHiddenFields(
+                                radioToSelect.dataset.address1,
+                                radioToSelect.dataset.address2 || '',
+                                radioToSelect.dataset.postcode
+                            );
+                            this.state.addressValidated = true;
+                            this.state.selectedAddressId = radioToSelect.value;
+                            
+                            // Update badge with cached fee
+                            const badge = radioToSelect.closest('.address-option')?.querySelector('.address-fee-badge');
+                            if (badge) {
+                                badge.textContent = `£${this.state.deliveryFee.toFixed(2)}`;
+                                badge.classList.remove('bg-secondary', 'bg-danger');
+                                badge.classList.add('bg-success');
+                            }
+                            
+                            // Update status display
+                            const statusDiv = document.getElementById('deliveryStatusLoggedIn');
+                            const feeDisplay = document.getElementById('deliveryFeeDisplayLoggedIn');
+                            if (feeDisplay) feeDisplay.textContent = `£${this.state.deliveryFee.toFixed(2)}`;
+                            if (statusDiv) statusDiv.innerHTML = `<span class="text-success"><i class="bi bi-check-circle me-1"></i>Delivery available</span>`;
+                        } else {
+                            // Different postcode or not validated - need to validate
+                            this.validateSavedAddress(radioToSelect);
+                        }
+                    }
+                }, 100);
+            } else {
+                // No addresses - show prompt
+                document.getElementById('savedAddressList').classList.add('d-none');
+                document.getElementById('noAddressPrompt').classList.remove('d-none');
+                
+                // Pre-fill modal postcode from session
+                if (this.state.postcodeData?.postcode) {
+                    document.getElementById('modalPostcode').value = this.state.postcodeData.postcode;
+                }
+            }
+        } else {
+            // Guest - show inline form
+            document.getElementById('loggedInAddressSection').classList.add('d-none');
+            document.getElementById('guestAddressSection').classList.remove('d-none');
+            
+            // Setup guest validation button
+            document.getElementById('guestValidateBtn').addEventListener('click', () => this.validateGuestAddress());
+            
+            // Pre-fill from session
+            this.prefillGuestAddress();
+        }
+    },
+    
+    initAddressModal() {
+        const modal = document.getElementById('addAddressModal');
+        const saveBtn = document.getElementById('modalSaveAddressBtn');
+        
+        // Save button click
+        saveBtn.addEventListener('click', () => this.saveAddressFromModal());
+        
+        // Revert radio selection if modal closed without saving
+        modal.addEventListener('hidden.bs.modal', () => {
+            const newAddrRadio = document.getElementById('address_new');
+            if (newAddrRadio && newAddrRadio.checked && this.state.previousSelectedAddress) {
+                // Modal closed without saving - revert to previous selection
+                const prevRadio = document.getElementById('address_' + this.state.previousSelectedAddress);
+                if (prevRadio) {
+                    prevRadio.checked = true;
+                }
+            }
+            this.state.previousSelectedAddress = null;
+        });
+        
+        // Pre-fill when modal opens
+        modal.addEventListener('show.bs.modal', () => {
+            // Clear previous entries
+            document.getElementById('modalAddressLine1').value = '';
+            document.getElementById('modalAddressLine2').value = '';
+            document.getElementById('modalPostcodeStatus').innerHTML = '';
+            this.clearModalValidation();
+
+            // Pre-fill from session
+            if (this.state.postcodeData?.postcode) {
+                document.getElementById('modalPostcode').value = this.state.postcodeData.postcode;
+
+                // For Uber Direct, also fill in address if available
+                if (window.UBER_DIRECT_ENABLED && this.state.postcodeData.address) {
+                    document.getElementById('modalAddressLine1').value = this.state.postcodeData.address;
+                }
+            } else {
+                document.getElementById('modalPostcode').value = '';
+            }
+        });
+    },
+    
+    renderSavedAddresses() {
+        const container = document.getElementById('savedAddressList');
+        if (!container) return;
+        
+        const addresses = this.state.addresses;
+        const showCollapsible = addresses.length > 1;
+        
+        // Determine which address should be selected (based on sessionStorage)
+        const storedAddressId = this.state.postcodeData?.addressId;
+        const storedPostcode = this.state.postcodeData?.postcode?.toUpperCase();
+        let selectedIndex = 0;
+        
+        if (storedAddressId) {
+            const idx = addresses.findIndex(a => a.address_id == storedAddressId);
+            if (idx !== -1) selectedIndex = idx;
+        } else if (storedPostcode) {
+            const idx = addresses.findIndex(a => a.postcode?.toUpperCase() === storedPostcode);
+            if (idx !== -1) selectedIndex = idx;
+        }
+        
+        let html = '<label class="form-label mb-2">Delivery address</label>';
+        
+        // Render selected address first
+        const selectedAddr = addresses[selectedIndex];
+        html += this.renderAddressOption(selectedAddr, true);
+        
+        if (showCollapsible) {
+            // Show more toggle
+            html += `
+                <button type="button" class="btn btn-link btn-sm w-100 text-start mb-2 p-0" 
+                        onclick="CheckoutManager.toggleOtherAddresses(this)">
+                    <i class="bi bi-chevron-down me-1"></i>
+                    <span>Show ${addresses.length - 1} other address${addresses.length > 2 ? 'es' : ''}</span>
+                </button>
+            `;
+            
+            // Collapsible section for other addresses
+            html += '<div id="otherAddressesSection" class="d-none">';
+            addresses.forEach((addr, index) => {
+                if (index !== selectedIndex) {
+                    html += this.renderAddressOption(addr, false);
+                }
+            });
+            html += '</div>';
+        }
+        
+        // Add "new address" option - always visible
+        html += `
+            <div class="form-check border rounded p-3 mb-2 border-dashed address-option" data-address-id="new">
+                <input class="form-check-input" type="radio" name="selected_address" 
+                    id="address_new" value="new">
+                <label class="form-check-label w-100" for="address_new" style="cursor: pointer;">
+                    <i class="bi bi-plus-circle me-2"></i>Add new address
+                </label>
+            </div>
+        `;
+        
+        container.innerHTML = html;
+        
+        // Bind radio change events
+        container.querySelectorAll('input[name="selected_address"]').forEach(radio => {
+            radio.addEventListener('change', (e) => this.handleAddressRadioChange(e.target));
+        });
+    },
+    
+    renderAddressOption(addr, isChecked) {
+        return `
+            <div class="form-check border rounded p-3 mb-2 address-option" data-address-id="${addr.address_id}">
+                <input class="form-check-input" type="radio" name="selected_address" 
+                    id="address_${addr.address_id}" 
+                    value="${addr.address_id}"
+                    data-address1="${this.escapeAttr(addr.address_1)}"
+                    data-address2="${this.escapeAttr(addr.address_2 || '')}"
+                    data-postcode="${this.escapeAttr(addr.postcode)}"
+                    ${isChecked ? 'checked' : ''}>
+                <label class="form-check-label w-100" for="address_${addr.address_id}">
+                    <strong>${this.escapeHtml(addr.address_1)}</strong>
+                    ${addr.address_2 ? '<br><span class="text-muted">' + this.escapeHtml(addr.address_2) + '</span>' : ''}
+                    <br><span class="text-muted">${this.escapeHtml(addr.postcode)}</span>
+                    <span class="badge bg-secondary float-end address-fee-badge">-</span>
+                </label>
+            </div>
+        `;
+    },
+    
+    toggleOtherAddresses(btn) {
+        const section = document.getElementById('otherAddressesSection');
+        const icon = btn.querySelector('i');
+        const text = btn.querySelector('span');
+        const count = this.state.addresses.length - 1;
+        
+        if (section.classList.contains('d-none')) {
+            section.classList.remove('d-none');
+            icon.classList.replace('bi-chevron-down', 'bi-chevron-up');
+            text.textContent = 'Hide other addresses';
+        } else {
+            section.classList.add('d-none');
+            icon.classList.replace('bi-chevron-up', 'bi-chevron-down');
+            text.textContent = `Show ${count} other address${count > 1 ? 'es' : ''}`;
+        }
+    },
+    
+    handleAddressRadioChange(radio) {
+        if (radio.value === 'new') {
+            // Store currently selected address before opening modal
+            const currentSelected = document.querySelector('input[name="selected_address"]:not([value="new"]):checked');
+            this.state.previousSelectedAddress = currentSelected ? currentSelected.value : null;
+            
+            // If no previous, try to find the first valid address
+            if (!this.state.previousSelectedAddress) {
+                const firstAddr = document.querySelector('input[name="selected_address"]:not([value="new"])');
+                this.state.previousSelectedAddress = firstAddr ? firstAddr.value : null;
+            }
+            
+            // Open modal
+            const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('addAddressModal'));
+            modal.show();
+            return;
+        }
+        
+        // Clear previous tracking when selecting a real address
+        this.state.previousSelectedAddress = null;
+        
+        // Validate selected saved address
+        this.validateSavedAddress(radio);
+    },
+    
+    async validateSavedAddress(radio) {
+        const postcode = radio.dataset.postcode;
+        const address1 = radio.dataset.address1;
+        const address2 = radio.dataset.address2 || '';
+        const addressId = radio.value;
+
+        const statusDiv = document.getElementById('deliveryStatusLoggedIn');
+        const feeDisplay = document.getElementById('deliveryFeeDisplayLoggedIn');
+        const badge = radio.closest('.address-option')?.querySelector('.address-fee-badge');
+
+        // Show checking state
+        if (statusDiv) statusDiv.textContent = 'Checking delivery availability...';
+        if (badge) {
+            badge.textContent = 'Checking...';
+            badge.classList.remove('bg-success', 'bg-danger');
+            badge.classList.add('bg-secondary');
+        }
+
+        // Clear existing Uber quote when changing address
+        if (window.UBER_DIRECT_ENABLED && typeof UberDelivery !== 'undefined') {
+            UberDelivery.clearQuote();
+            this.clearUberFields();
+        }
+
+        try {
+            // If Uber Direct enabled, get quote instead of standard postcode validation
+            if (window.UBER_DIRECT_ENABLED && typeof UberDelivery !== 'undefined') {
+                const quoteResult = await UberDelivery.getQuote({ address_id: addressId });
+
+                if (quoteResult.success) {
+                    // Use standard delivery fee from delivery.json (fetched via postcode validation)
+                    const feeResponse = await fetch(`${BASE_PATH}/checkout/validate-postcode`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: `postcode=${encodeURIComponent(postcode)}`
+                    });
+                    const feeResult = await feeResponse.json();
+                    const deliveryFee = feeResult.success ? feeResult.data.deliveryFee : 0;
+                    const distance = feeResult.success ? feeResult.data.distance : 0;
+
+                    this.state.postcodeData = {
+                        postcode: postcode,
+                        distance: distance,
+                        deliveryFee: deliveryFee,
+                        validated: true,
+                        uberQuoteId: quoteResult.quote_id,
+                        uberExpires: quoteResult.expires,
+                        lat: quoteResult.lat,
+                        lng: quoteResult.lng
+                    };
+                    this.state.deliveryFee = deliveryFee;
+                    this.state.addressValidated = true;
+                    this.state.selectedAddressId = addressId;
+
+                    this.populateHiddenFields(address1, address2, postcode);
+                    this.populateUberFields(quoteResult);
+
+                    if (feeDisplay) feeDisplay.textContent = `£${deliveryFee.toFixed(2)}`;
+                    if (statusDiv) statusDiv.innerHTML = `<span class="text-success"><i class="bi bi-check-circle me-1"></i>Delivery available</span>`;
+                    if (badge) {
+                        badge.textContent = `£${deliveryFee.toFixed(2)}`;
+                        badge.classList.remove('bg-secondary', 'bg-danger');
+                        badge.classList.add('bg-success');
+                    }
+
+                    sessionStorage.setItem('postcode_data', JSON.stringify(this.state.postcodeData));
+                    this.calculateTotals();
+                    this.checkAutoPromos();
+                } else {
+                    this.state.deliveryFee = 0;
+                    this.state.addressValidated = false;
+                    this.clearHiddenFields();
+                    this.clearUberFields();
+
+                    if (feeDisplay) feeDisplay.textContent = '-';
+                    if (statusDiv) statusDiv.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle me-1"></i>${quoteResult.error || 'Delivery unavailable'}</span>`;
+                    if (badge) {
+                        badge.textContent = 'Unavailable';
+                        badge.classList.remove('bg-secondary', 'bg-success');
+                        badge.classList.add('bg-danger');
+                    }
+
+                    this.calculateTotals();
+                    this.checkAutoPromos();
+                }
+            } else {
+                // Standard postcode validation
+                const response = await fetch(`${BASE_PATH}/checkout/validate-postcode`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `postcode=${encodeURIComponent(postcode)}`
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    this.state.postcodeData = {
+                        postcode: postcode,
+                        distance: result.data.distance,
+                        deliveryFee: result.data.deliveryFee,
+                        validated: true
+                    };
+                    this.state.deliveryFee = result.data.deliveryFee;
+                    this.state.addressValidated = true;
+                    this.state.selectedAddressId = radio.value;
+
+                    this.populateHiddenFields(address1, address2, postcode);
+
+                    if (feeDisplay) feeDisplay.textContent = `£${result.data.deliveryFee.toFixed(2)}`;
+                    if (statusDiv) statusDiv.innerHTML = `<span class="text-success"><i class="bi bi-check-circle me-1"></i>Delivery available (${result.data.distance.toFixed(1)} miles)</span>`;
+                    if (badge) {
+                        badge.textContent = `£${result.data.deliveryFee.toFixed(2)}`;
+                        badge.classList.remove('bg-secondary', 'bg-danger');
+                        badge.classList.add('bg-success');
+                    }
+
+                    sessionStorage.setItem('postcode_data', JSON.stringify(this.state.postcodeData));
+                    this.calculateTotals();
+                    this.checkAutoPromos();
+
+                } else {
+                    this.state.deliveryFee = 0;
+                    this.state.addressValidated = false;
+                    this.clearHiddenFields();
+
+                    if (feeDisplay) feeDisplay.textContent = '-';
+                    if (statusDiv) statusDiv.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle me-1"></i>${result.data.message}</span>`;
+                    if (badge) {
+                        badge.textContent = 'Unavailable';
+                        badge.classList.remove('bg-secondary', 'bg-success');
+                        badge.classList.add('bg-danger');
+                    }
+
+                    this.calculateTotals();
+                    this.checkAutoPromos();
+                }
+            }
+        } catch (error) {
+            console.error('Address validation error:', error);
+            if (statusDiv) statusDiv.innerHTML = '<span class="text-danger">Network error. Please try again.</span>';
+            if (badge) {
+                badge.textContent = 'Error';
+                badge.classList.remove('bg-secondary', 'bg-success');
+                badge.classList.add('bg-danger');
+            }
+        }
+    },
+    
+    async saveAddressFromModal() {
+        const address1 = document.getElementById('modalAddressLine1').value.trim();
+        const address2 = document.getElementById('modalAddressLine2').value.trim();
+        const postcode = document.getElementById('modalPostcode').value.trim().toUpperCase();
+        const statusDiv = document.getElementById('modalPostcodeStatus');
+        const btn = document.getElementById('modalSaveAddressBtn');
+
+        // Clear previous validation
+        this.clearModalValidation();
+
+        // Clear existing Uber quote when adding new address
+        if (window.UBER_DIRECT_ENABLED && typeof UberDelivery !== 'undefined') {
+            UberDelivery.clearQuote();
+            this.clearUberFields();
+        }
+
+        // Validate required fields
+        let hasError = false;
+
+        if (!address1) {
+            document.getElementById('modalAddressLine1').classList.add('is-invalid');
+            hasError = true;
+        }
+
+        if (!postcode) {
+            document.getElementById('modalPostcode').classList.add('is-invalid');
+            hasError = true;
+        }
+
+        if (hasError) return;
+
+        // Show loading
+        btn.disabled = true;
+        btn.querySelector('.btn-text').classList.add('d-none');
+        btn.querySelector('.btn-loading').classList.remove('d-none');
+        statusDiv.innerHTML = '<span class="text-muted">Validating address...</span>';
+
+        try {
+            // First validate postcode for delivery fee
+            const validateResponse = await fetch(`${BASE_PATH}/checkout/validate-postcode`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `postcode=${encodeURIComponent(postcode)}`
+            });
+
+            const validateResult = await validateResponse.json();
+
+            if (!validateResult.success) {
+                document.getElementById('modalPostcode').classList.add('is-invalid');
+                statusDiv.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle me-1"></i>${validateResult.data.message}</span>`;
+                return;
+            }
+
+            // If Uber enabled, get quote before saving
+            let uberQuoteData = null;
+            if (window.UBER_DIRECT_ENABLED && typeof UberDelivery !== 'undefined') {
+                const quoteResult = await UberDelivery.getQuote({
+                    address: address1 + (address2 ? ' ' + address2 : ''),
+                    postcode: postcode
+                });
+
+                if (!quoteResult.success) {
+                    statusDiv.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle me-1"></i>${quoteResult.error || 'Delivery unavailable to this address'}</span>`;
+                    return;
+                }
+                uberQuoteData = quoteResult;
+            }
+
+            // Address valid - now save it
+            const saveResponse = await fetch(`${BASE_PATH}/api/address/add`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    address_1: address1,
+                    address_2: address2,
+                    postcode: postcode,
+                    latitude: uberQuoteData?.lat || null,
+                    longitude: uberQuoteData?.lng || null
+                })
+            });
+
+            const saveResult = await saveResponse.json();
+
+            if (saveResult.success) {
+                // Add to local addresses array
+                const newAddr = {
+                    address_id: saveResult.address_id,
+                    address_1: address1,
+                    address_2: address2,
+                    postcode: postcode
+                };
+                this.state.addresses.push(newAddr);
+
+                // Update state
+                this.state.postcodeData = {
+                    postcode: postcode,
+                    distance: validateResult.data.distance,
+                    deliveryFee: validateResult.data.deliveryFee,
+                    validated: true
+                };
+
+                // Add Uber quote data if present
+                if (uberQuoteData) {
+                    this.state.postcodeData.uberQuoteId = uberQuoteData.quote_id;
+                    this.state.postcodeData.uberExpires = uberQuoteData.expires;
+                    this.state.postcodeData.lat = uberQuoteData.lat;
+                    this.state.postcodeData.lng = uberQuoteData.lng;
+                    this.populateUberFields(uberQuoteData);
+                }
+
+                this.state.deliveryFee = validateResult.data.deliveryFee;
+                this.state.addressValidated = true;
+                this.state.selectedAddressId = saveResult.address_id;
+
+                // Populate hidden fields
+                this.populateHiddenFields(address1, address2, postcode);
+
+                // Close modal
+                const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('addAddressModal'));
+                modal.hide();
+
+                // Update UI
+                this.addAddressToRadioList(newAddr, validateResult.data.deliveryFee);
+
+                // Show success
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Address Saved',
+                    toast: true,
+                    position: 'top-end',
+                    timer: 1500,
+                    showConfirmButton: false
+                });
+
+                sessionStorage.setItem('postcode_data', JSON.stringify(this.state.postcodeData));
+                this.calculateTotals();
+                this.checkAutoPromos();
+
+            } else {
+                statusDiv.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle me-1"></i>${saveResult.error || 'Failed to save address'}</span>`;
+            }
+
+        } catch (error) {
+            console.error('Save address error:', error);
+            statusDiv.innerHTML = '<span class="text-danger">Network error. Please try again.</span>';
+        } finally {
+            btn.disabled = false;
+            btn.querySelector('.btn-text').classList.remove('d-none');
+            btn.querySelector('.btn-loading').classList.add('d-none');
+        }
+    },
+    
+    addAddressToRadioList(addr, deliveryFee) {
+        const container = document.getElementById('savedAddressList');
+        const noAddressPrompt = document.getElementById('noAddressPrompt');
+        const feeSection = document.getElementById('deliveryFeeSectionLoggedIn');
+        
+        // If this is first address, need to setup the list
+        if (noAddressPrompt && !noAddressPrompt.classList.contains('d-none')) {
+            noAddressPrompt.classList.add('d-none');
+            container.classList.remove('d-none');
+            feeSection.classList.remove('d-none');
+            
+            // Render full list with this address
+            this.renderSavedAddresses();
+            
+            // Select and validate the new address
+            setTimeout(() => {
+                const newRadio = document.getElementById(`address_${addr.address_id}`);
+                if (newRadio) {
+                    newRadio.checked = true;
+                    // Update badge directly since we already validated
+                    const badge = newRadio.closest('.address-option')?.querySelector('.address-fee-badge');
+                    if (badge) {
+                        badge.textContent = `£${deliveryFee.toFixed(2)}`;
+                        badge.classList.remove('bg-secondary', 'bg-danger');
+                        badge.classList.add('bg-success');
+                    }
+                }
+            }, 100);
+        } else {
+            // Add new radio before "add new" option
+            const newOption = document.getElementById('address_new').closest('.address-option');
+            
+            const newRadioHtml = `
+                <div class="form-check border rounded p-3 mb-2 address-option" data-address-id="${addr.address_id}">
+                    <input class="form-check-input" type="radio" name="selected_address" 
+                        id="address_${addr.address_id}" 
+                        value="${addr.address_id}"
+                        data-address1="${this.escapeAttr(addr.address_1)}"
+                        data-address2="${this.escapeAttr(addr.address_2 || '')}"
+                        data-postcode="${this.escapeAttr(addr.postcode)}"
+                        checked>
+                    <label class="form-check-label w-100" for="address_${addr.address_id}">
+                        <strong>${this.escapeHtml(addr.address_1)}</strong>
+                        ${addr.address_2 ? '<br><span class="text-muted">' + this.escapeHtml(addr.address_2) + '</span>' : ''}
+                        <br><span class="text-muted">${this.escapeHtml(addr.postcode)}</span>
+                        <span class="badge bg-success float-end address-fee-badge">£${deliveryFee.toFixed(2)}</span>
+                    </label>
+                </div>
+            `;
+            
+            newOption.insertAdjacentHTML('beforebegin', newRadioHtml);
+            
+            // Bind event to new radio
+            const newRadio = document.getElementById(`address_${addr.address_id}`);
+            newRadio.addEventListener('change', (e) => this.handleAddressRadioChange(e.target));
+            
+            // Uncheck other radios
+            container.querySelectorAll('input[name="selected_address"]').forEach(r => {
+                if (r.id !== `address_${addr.address_id}`) r.checked = false;
+            });
+        }
+        
+        // Update fee display
+        document.getElementById('deliveryFeeDisplayLoggedIn').textContent = `£${deliveryFee.toFixed(2)}`;
+        document.getElementById('deliveryStatusLoggedIn').innerHTML = 
+            `<span class="text-success"><i class="bi bi-check-circle me-1"></i>Delivery available</span>`;
+    },
+    
+    clearModalValidation() {
+        ['modalAddressLine1', 'modalAddressLine2', 'modalPostcode'].forEach(id => {
+            document.getElementById(id)?.classList.remove('is-invalid', 'is-valid');
+        });
+    },
+    
+    // Guest address handling
+    prefillGuestAddress() {
+        if (this.state.postcodeData?.postcode) {
+            document.getElementById('guestPostcode').value = this.state.postcodeData.postcode;
+
+            // For Uber Direct, also fill in address if available
+            if (window.UBER_DIRECT_ENABLED && this.state.postcodeData.address) {
+                document.getElementById('guestAddressLine1').value = this.state.postcodeData.address;
+            }
+
+            if (this.state.postcodeData.validated) {
+                this.state.deliveryFee = this.state.postcodeData.deliveryFee || 0;
+
+                // If Uber and we have a valid quote with address, auto-validate
+                if (window.UBER_DIRECT_ENABLED && this.state.postcodeData.uberQuoteId && this.state.postcodeData.address) {
+                    this.state.addressValidated = true;
+                    this.populateHiddenFields(this.state.postcodeData.address, '', this.state.postcodeData.postcode);
+                    this.populateUberFields({
+                        quote_id: this.state.postcodeData.uberQuoteId,
+                        expires: this.state.postcodeData.uberExpires,
+                        lat: this.state.postcodeData.lat,
+                        lng: this.state.postcodeData.lng
+                    });
+
+                    document.getElementById('guestAddressLine1').classList.add('is-valid');
+                    document.getElementById('guestPostcode').classList.add('is-valid');
+                    document.getElementById('deliveryFeeDisplayGuest').textContent = `£${this.state.deliveryFee.toFixed(2)}`;
+                    document.getElementById('deliveryStatusGuest').innerHTML =
+                        `<span class="text-success"><i class="bi bi-check-circle me-1"></i>Delivery available</span>`;
+
+                    this.calculateTotals();
+                    this.checkAutoPromos();
+                } else {
+                    this.state.addressValidated = false; // Still need address validation
+
+                    document.getElementById('deliveryFeeDisplayGuest').textContent = `£${this.state.deliveryFee.toFixed(2)}`;
+                    document.getElementById('deliveryStatusGuest').innerHTML =
+                        `<span class="text-success"><i class="bi bi-check-circle me-1"></i>Postcode validated - enter address above</span>`;
+                    document.getElementById('guestPostcode').classList.add('is-valid');
+                }
+            }
+        }
+    },
+
+    async validateGuestAddress() {
+        const address1 = document.getElementById('guestAddressLine1').value.trim();
+        const address2 = document.getElementById('guestAddressLine2').value.trim();
+        const postcode = document.getElementById('guestPostcode').value.trim().toUpperCase();
+        const statusDiv = document.getElementById('deliveryStatusGuest');
+        const feeDisplay = document.getElementById('deliveryFeeDisplayGuest');
+        const btn = document.getElementById('guestValidateBtn');
+        
+        // Clear validation
+        ['guestAddressLine1', 'guestPostcode'].forEach(id => {
+            document.getElementById(id).classList.remove('is-invalid', 'is-valid');
+        });
+        
+        // Validate required
+        let hasError = false;
+        
+        if (!address1) {
+            document.getElementById('guestAddressLine1').classList.add('is-invalid');
+            hasError = true;
+        }
+        
+        if (!postcode) {
+            document.getElementById('guestPostcode').classList.add('is-invalid');
+            hasError = true;
+        }
+        
+        if (hasError) return;
+        
+        // Show loading
+        btn.disabled = true;
+        btn.querySelector('.btn-text').classList.add('d-none');
+        btn.querySelector('.btn-loading').classList.remove('d-none');
+        statusDiv.textContent = 'Checking address...';
+
+        try {
+            // If Uber Direct enabled, get quote first
+            if (window.UBER_DIRECT_ENABLED && typeof UberDelivery !== 'undefined') {
+                const quoteResult = await UberDelivery.getQuote({
+                    address: address1 + (address2 ? ' ' + address2 : ''),
+                    postcode: postcode
+                });
+
+                if (quoteResult.success) {
+                    // Also fetch delivery fee from our pricing
+                    const feeResponse = await fetch(`${BASE_PATH}/checkout/validate-postcode`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: `postcode=${encodeURIComponent(postcode)}`
+                    });
+                    const feeResult = await feeResponse.json();
+                    const deliveryFee = feeResult.success ? feeResult.data.deliveryFee : 0;
+
+                    this.state.postcodeData = {
+                        postcode: postcode,
+                        address: address1,
+                        deliveryFee: deliveryFee,
+                        validated: true,
+                        uberQuoteId: quoteResult.quote_id,
+                        uberExpires: quoteResult.expires,
+                        lat: quoteResult.lat,
+                        lng: quoteResult.lng
+                    };
+                    this.state.deliveryFee = deliveryFee;
+                    this.state.addressValidated = true;
+
+                    this.populateHiddenFields(address1, address2, postcode);
+                    this.populateUberFields(quoteResult);
+
+                    document.getElementById('guestAddressLine1').classList.add('is-valid');
+                    document.getElementById('guestPostcode').classList.add('is-valid');
+                    feeDisplay.textContent = `£${deliveryFee.toFixed(2)}`;
+                    statusDiv.innerHTML = `<span class="text-success"><i class="bi bi-check-circle me-1"></i>Delivery available</span>`;
+
+                    sessionStorage.setItem('postcode_data', JSON.stringify(this.state.postcodeData));
+                    this.calculateTotals();
+                    this.checkAutoPromos();
+                } else {
+                    document.getElementById('guestAddressLine1').classList.add('is-invalid');
+                    feeDisplay.textContent = '-';
+                    statusDiv.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle me-1"></i>${quoteResult.error || 'Delivery unavailable to this address'}</span>`;
+
+                    this.state.addressValidated = false;
+                    this.clearHiddenFields();
+                    this.clearUberFields();
+                    this.calculateTotals();
+                    this.checkAutoPromos();
+                }
+            } else {
+                // Standard postcode validation
+                const response = await fetch(`${BASE_PATH}/checkout/validate-postcode`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `postcode=${encodeURIComponent(postcode)}`
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    this.state.postcodeData = {
+                        postcode: postcode,
+                        distance: result.data.distance,
+                        deliveryFee: result.data.deliveryFee,
+                        validated: true
+                    };
+                    this.state.deliveryFee = result.data.deliveryFee;
+                    this.state.addressValidated = true;
+
+                    this.populateHiddenFields(address1, address2, postcode);
+
+                    document.getElementById('guestAddressLine1').classList.add('is-valid');
+                    document.getElementById('guestPostcode').classList.add('is-valid');
+                    feeDisplay.textContent = `£${result.data.deliveryFee.toFixed(2)}`;
+                    statusDiv.innerHTML = `<span class="text-success"><i class="bi bi-check-circle me-1"></i>Delivery available (${result.data.distance.toFixed(1)} miles)</span>`;
+
+                    sessionStorage.setItem('postcode_data', JSON.stringify(this.state.postcodeData));
+                    this.calculateTotals();
+                    this.checkAutoPromos();
+
+                } else {
+                    document.getElementById('guestPostcode').classList.add('is-invalid');
+                    feeDisplay.textContent = '-';
+                    statusDiv.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle me-1"></i>${result.data.message}</span>`;
+
+                    this.state.addressValidated = false;
+                    this.clearHiddenFields();
+                    this.calculateTotals();
+                    this.checkAutoPromos();
+                }
+            }
+        } catch (error) {
+            console.error('Postcode validation error:', error);
+            statusDiv.innerHTML = '<span class="text-danger">Network error. Please try again.</span>';
+        } finally {
+            btn.disabled = false;
+            btn.querySelector('.btn-text').classList.remove('d-none');
+            btn.querySelector('.btn-loading').classList.add('d-none');
+        }
+    },
+    
+    populateHiddenFields(address1, address2, postcode) {
+        document.getElementById('finalAddress1').value = address1;
+        document.getElementById('finalAddress2').value = address2 || '';
+        document.getElementById('finalPostcode').value = postcode;
+    },
+    
+    clearHiddenFields() {
+        document.getElementById('finalAddress1').value = '';
+        document.getElementById('finalAddress2').value = '';
+        document.getElementById('finalPostcode').value = '';
+    },
+
+    // Uber quote field helpers
+    populateUberFields(quoteData) {
+        document.getElementById('uberQuoteId').value = quoteData.quote_id || '';
+        document.getElementById('uberQuoteExpires').value = quoteData.expires || '';
+        document.getElementById('deliveryLat').value = quoteData.lat || '';
+        document.getElementById('deliveryLng').value = quoteData.lng || '';
+    },
+
+    clearUberFields() {
+        document.getElementById('uberQuoteId').value = '';
+        document.getElementById('uberQuoteExpires').value = '';
+        document.getElementById('deliveryLat').value = '';
+        document.getElementById('deliveryLng').value = '';
+    },
+
+    // Initialize Uber quote on page load
+    async initUberQuote() {
+        if (!window.UBER_DIRECT_ENABLED || typeof UberDelivery === 'undefined') {
+            return;
+        }
+
+        if (this.state.deliveryMethod !== 'delivery') {
+            return;
+        }
+
+        // Check if we have quote data from menu page
+        const quoteData = UberDelivery.getQuoteData();
+        if (!quoteData) {
+            return;
+        }
+
+        // Check if quote is still valid (uses hasValidQuote which checks 2-min buffer)
+        if (UberDelivery.hasValidQuote()) {
+            // Quote still valid - populate fields from stored data
+            this.populateUberFields(quoteData);
+
+            // Also update postcodeData if not already set
+            if (this.state.postcodeData && !this.state.postcodeData.uberQuoteId) {
+                this.state.postcodeData.uberQuoteId = quoteData.quote_id;
+                this.state.postcodeData.uberExpires = quoteData.expires;
+                this.state.postcodeData.lat = quoteData.lat;
+                this.state.postcodeData.lng = quoteData.lng;
+            }
+        } else {
+            // Quote expiring/expired - silently refresh in background
+            const result = await UberDelivery.validateQuote();
+            if (result.valid) {
+                const refreshedData = UberDelivery.getQuoteData();
+                this.populateUberFields(refreshedData);
+
+                if (this.state.postcodeData) {
+                    this.state.postcodeData.uberQuoteId = refreshedData.quote_id;
+                    this.state.postcodeData.uberExpires = refreshedData.expires;
+                }
+            }
+            // If refresh failed, we'll catch it on submit
+        }
+    },
+
+    // Validate Uber quote before submit
+    async validateUberQuoteForSubmit() {
+        if (!window.UBER_DIRECT_ENABLED || typeof UberDelivery === 'undefined') {
+            return { valid: true };
+        }
+
+        if (this.state.deliveryMethod !== 'delivery') {
+            return { valid: true };
+        }
+
+        // Check if quote is still valid
+        if (UberDelivery.hasValidQuote()) {
+            // Ensure fields are populated
+            const quoteData = UberDelivery.getQuoteData();
+            this.populateUberFields(quoteData);
+            return { valid: true };
+        }
+
+        // Quote expired/expiring - try to refresh
+        const result = await UberDelivery.validateQuote();
+        if (result.valid) {
+            const refreshedData = UberDelivery.getQuoteData();
+            this.populateUberFields(refreshedData);
+            return { valid: true };
+        }
+
+        // Couldn't refresh quote
+        return { valid: false, error: result.error || 'Delivery quote expired. Please try again.' };
+    },
+
+    async validateAddressForSubmit() {
+    if (this.state.deliveryMethod !== 'delivery') {
+        return { valid: true };
+    }
+
+    // Logged in - hidden fields already populated by radio selection
+    if (this.state.isLoggedIn) {
+        const address1 = document.getElementById('finalAddress1').value.trim();
+        const postcode = document.getElementById('finalPostcode').value.trim();
+        
+        if (!address1 || !postcode) {
+            return { valid: false, message: 'Please select a delivery address' };
+        }
+        if (!this.state.addressValidated) {
+            return { valid: false, message: 'Please validate your delivery address' };
+        }
+            return { valid: true };
+        }
+
+        // Guest - read from visible fields
+        const address1 = document.getElementById('guestAddressLine1')?.value.trim();
+        const address2 = document.getElementById('guestAddressLine2')?.value.trim() || '';
+        const postcode = document.getElementById('guestPostcode')?.value.trim().toUpperCase();
+        
+        if (!address1) {
+            document.getElementById('guestAddressLine1')?.classList.add('is-invalid');
+            return { valid: false, message: 'Please enter your delivery address' };
+        }
+        if (!postcode) {
+            document.getElementById('guestPostcode')?.classList.add('is-invalid');
+            return { valid: false, message: 'Please enter your postcode' };
+        }
+
+        const storedPostcode = this.state.postcodeData?.postcode?.toUpperCase();
+        const storedAddress = this.state.postcodeData?.address;
+        const postcodeChanged = postcode !== storedPostcode;
+        const addressChanged = window.UBER_DIRECT_ENABLED && address1 !== storedAddress;
+        const needsValidation = postcodeChanged || addressChanged || !this.state.postcodeData?.validated;
+
+        // Already validated and nothing changed - just populate hidden fields
+        if (!needsValidation) {
+            this.populateHiddenFields(address1, address2, postcode);
+            if (window.UBER_DIRECT_ENABLED && this.state.postcodeData.uberQuoteId) {
+                this.populateUberFields({
+                    quote_id: this.state.postcodeData.uberQuoteId,
+                    expires: this.state.postcodeData.uberExpires,
+                    lat: this.state.postcodeData.lat,
+                    lng: this.state.postcodeData.lng
+                });
+            }
+            this.state.addressValidated = true;
+            return { valid: true };
+        }
+
+        // Need silent validation
+        const statusDiv = document.getElementById('deliveryStatusGuest');
+        
+        try {
+            if (window.UBER_DIRECT_ENABLED) {
+                // Get new Uber quote
+                const quoteResult = await UberDelivery.getQuote({
+                    address: address1 + (address2 ? ' ' + address2 : ''),
+                    postcode: postcode
+                });
+
+                if (!quoteResult.success) {
+                    document.getElementById('guestPostcode')?.classList.add('is-invalid');
+                    if (statusDiv) statusDiv.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle me-1"></i>${quoteResult.error || 'Delivery unavailable'}</span>`;
+                    return { valid: false, message: quoteResult.error || 'Delivery unavailable to this address' };
+                }
+
+                // Get delivery fee from our pricing
+                const feeResponse = await fetch(`${BASE_PATH}/checkout/validate-postcode`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `postcode=${encodeURIComponent(postcode)}`
+                });
+                const feeResult = await feeResponse.json();
+                const deliveryFee = feeResult.success ? feeResult.data.deliveryFee : 0;
+
+                this.state.postcodeData = {
+                    postcode: postcode,
+                    address: address1,
+                    deliveryFee: deliveryFee,
+                    validated: true,
+                    uberQuoteId: quoteResult.quote_id,
+                    uberExpires: quoteResult.expires,
+                    lat: quoteResult.lat,
+                    lng: quoteResult.lng
+                };
+                this.state.deliveryFee = deliveryFee;
+
+                this.populateHiddenFields(address1, address2, postcode);
+                this.populateUberFields(quoteResult);
+
+            } else {
+                // Standard postcode validation
+                const response = await fetch(`${BASE_PATH}/checkout/validate-postcode`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `postcode=${encodeURIComponent(postcode)}`
+                });
+                const result = await response.json();
+
+                if (!result.success) {
+                    document.getElementById('guestPostcode')?.classList.add('is-invalid');
+                    if (statusDiv) statusDiv.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle me-1"></i>${result.data?.message || 'Delivery unavailable'}</span>`;
+                    return { valid: false, message: result.data?.message || 'Delivery unavailable to this postcode' };
+                }
+
+                this.state.postcodeData = {
+                    postcode: postcode,
+                    distance: result.data.distance,
+                    deliveryFee: result.data.deliveryFee,
+                    validated: true
+                };
+                this.state.deliveryFee = result.data.deliveryFee;
+
+                this.populateHiddenFields(address1, address2, postcode);
+            }
+
+            this.state.addressValidated = true;
+            sessionStorage.setItem('postcode_data', JSON.stringify(this.state.postcodeData));
+            this.calculateTotals();
+            return { valid: true };
+
+        } catch (error) {
+            console.error('Address validation error:', error);
+            return { valid: false, message: 'Network error validating address. Please try again.' };
+        }
+    },
+    
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text || '';
+        return div.innerHTML;
+    },
+    
+    escapeAttr(text) {
+        return (text || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    },
+
+    // ========================================
+    // UI & DISPLAY
+    // ========================================
+
+    updateSubmitButton() {
+        const submitBtn = document.getElementById('placeOrderBtn');
+        const submitBtnMobile = document.querySelector('.mobile-checkout-bar button[type="submit"]');
+        const checkedPayment = document.querySelector('input[name="payment_method"]:checked');
+        
+        if (checkedPayment && checkedPayment.value === 'card') {
+            submitBtn.innerHTML = `
+                <span class="btn-col"><i class="bi bi-credit-card"></i></span>
+                <span class="btn-col btn-col-center">Continue <i class="bi bi-arrow-right"></i></span>
+                <span class="btn-col btn-col-right"><span id="finalTotalDesktop">£${this.state.totals.final.toFixed(2)}</span></span>`;
+            if (submitBtnMobile) {
+                submitBtnMobile.innerHTML = `Continue <i class="bi bi-arrow-right ms-1"></i>`;
+            }
+        } else {
+            submitBtn.innerHTML = `
+                <span class="btn-col"><i class="bi bi-check-circle"></i></span>
+                <span class="btn-col btn-col-center">Place Order</span>
+                <span class="btn-col btn-col-right"><span id="finalTotalDesktop">£${this.state.totals.final.toFixed(2)}</span></span>`;
+            if (submitBtnMobile) {
+                submitBtnMobile.innerHTML = `Place Order <i class="bi bi-arrow-right ms-1"></i>`;
+            }
+        }
+    },
+
+    validatePhone(input) {
+        const cleaned = input.value.replace(/[\s\-\(\)]/g, '');
+        const ukPattern = /^(\+44|0)(7\d{9}|[12]\d{9,10})$/;
+        
+        if (ukPattern.test(cleaned)) {
+            input.setCustomValidity('');
+            input.classList.remove('is-invalid');
+            input.classList.add('is-valid');
+        } else {
+            input.setCustomValidity('Invalid UK phone number');
+            input.classList.add('is-invalid');
+            input.classList.remove('is-valid');
+        }
+    },
+
+    updateDeliveryUI() {
+        if (this.state.deliveryMethod === 'collection') {
+            document.getElementById('deliveryCardTitle').textContent = 'Collection Details';
+            document.getElementById('deliveryAddressSection').classList.add('d-none');
+            document.getElementById('collectionInfoSection').classList.remove('d-none');
+            document.getElementById('cashOptionWrapper').style.display = 'block';
+        } else {
+            document.getElementById('deliveryCardTitle').textContent = 'Delivery Details';
+            document.getElementById('deliveryAddressSection').classList.remove('d-none');
+            document.getElementById('collectionInfoSection').classList.add('d-none');
+            document.getElementById('cashOptionWrapper').style.display = 'none';
+            document.getElementById('payCard').checked = true;
+            this.updateSubmitButton();
+        }
+    },
+
+    renderCartItems() {
+        // Group BOGOF items
+        const groupedCart = this.groupBogofItems(this.state.cart);
+        
+        let html = '';
+        
+        groupedCart.forEach(item => {
+            html += `
+                <div class="checkout-cart-item">
+                    <div class="d-flex justify-content-between">
+                        <div class="flex-grow-1">
+                            <strong>${item.product_name}</strong>
+                            <span class="text-muted ms-2">x${item.displayQty}</span>
+                            ${item.is_bogof_group ? `
+                                <span class="badge bg-success ms-2">2for1</span>
+                            ` : ''}
+                            ${item.is_free && !item.is_bogof_group ? `
+                                <span class="badge bg-info ms-2">FREE</span>
+                            ` : ''}
+                            ${item.options && item.options.length > 0 ? `
+                                <div class="small text-muted mt-1">
+                                    ${this.renderItemOptions(item.options)}
+                                </div>
+                            ` : ''}
+                        </div>
+                        <strong>£${item.displayPrice.toFixed(2)}</strong>
+                    </div>
+                </div>
+            `;
+        });
+        
+        document.getElementById('checkoutCartItems').innerHTML = html;
+    },
+
+    groupBogofItems(cart) {
+        const grouped = [];
+        const processed = new Set();
+        
+        cart.forEach((item, index) => {
+            if (processed.has(index)) return;
+            
+            // Check if this is a paid BOGOF item (has cart_key starting with 'paid_')
+            if (item.cart_key && item.cart_key.startsWith('paid_') && item.offer_id) {
+                // Find matching free item via linked_to
+                const freeIndex = cart.findIndex((other, otherIndex) => 
+                    otherIndex !== index &&
+                    !processed.has(otherIndex) &&
+                    other.is_free &&
+                    other.linked_to === item.cart_key
+                );
+                
+                if (freeIndex !== -1) {
+                    // Found BOGOF pair - group them
+                    processed.add(index);
+                    processed.add(freeIndex);
+                    
+                    grouped.push({
+                        ...item,
+                        displayQty: item.quantity + cart[freeIndex].quantity,
+                        displayPrice: item.total_price * item.quantity,
+                        is_bogof_group: true
+                    });
+                    return;
+                }
+            }
+            
+            // Check if this is a free BOGOF item that should be paired
+            if (item.is_free && item.linked_to) {
+                // Check if its paid counterpart exists and will handle it
+                const hasPaidPair = cart.some((other, otherIndex) => 
+                    other.cart_key === item.linked_to && !processed.has(otherIndex)
+                );
+                
+                if (hasPaidPair) {
+                    // Skip - will be grouped by the paid item
+                    return;
+                }
+            }
+            
+            // Check if this is a non-BOGOF free item that can be grouped with others
+            if (item.is_free && !item.linked_to && item.offer_id) {
+                // Find all matching free items (same product, same offer, no options or same options)
+                const matchingIndices = [index];
+                
+                cart.forEach((other, otherIndex) => {
+                    if (otherIndex !== index &&
+                        !processed.has(otherIndex) &&
+                        other.is_free &&
+                        !other.linked_to &&
+                        other.product_id === item.product_id &&
+                        other.offer_id === item.offer_id &&
+                        this.optionsMatch(item.options, other.options)) {
+                        matchingIndices.push(otherIndex);
+                    }
+                });
+                
+                // Mark all as processed
+                matchingIndices.forEach(i => processed.add(i));
+                
+                // Calculate total quantity
+                const totalQty = matchingIndices.reduce((sum, i) => sum + cart[i].quantity, 0);
+                
+                grouped.push({
+                    ...item,
+                    displayQty: totalQty,
+                    displayPrice: 0,
+                    is_bogof_group: false
+                });
+                return;
+            }
+            
+            // Regular item
+            processed.add(index);
+            grouped.push({
+                ...item,
+                displayQty: item.quantity,
+                displayPrice: item.total_price * item.quantity,
+                is_bogof_group: false
+            });
+        });
+        
+        return grouped;
+    },
+
+    optionsMatch(opts1, opts2) {
+        if (!opts1 && !opts2) return true;
+        if (!opts1 || !opts2) return false;
+        if (opts1.length !== opts2.length) return false;
+        
+        return opts1.every((opt, i) => 
+            opt.option_id === opts2[i]?.option_id &&
+            opt.quantity === opts2[i]?.quantity
+        );
+    },
+
+    renderItemOptions(options) {
+        const rendered = new Set();
+        let html = '';
+        
+        options.forEach((opt, optIndex) => {
+            if (rendered.has(optIndex)) return;
+            
+            const isChild = !!opt.parent_option_id;
+            if (isChild) return;
+            
+            const qtyStr = opt.quantity && opt.quantity > 1 ? ` x${opt.quantity}` : '';
+            const quantity = opt.quantity || 1;
+            const unitPrice = (parseFloat(opt.option_price) || 0) + (parseFloat(opt.child_price) || 0);
+            const totalPrice = unitPrice * quantity;
+            const priceStr = totalPrice > 0 ? ` +£${totalPrice.toFixed(2)}` : '';
+            
+            html += `<span class="d-block">+ ${opt.option_name}${qtyStr}${priceStr}</span>`;
+            rendered.add(optIndex);
+            
+            // Render children nested under this option
+            options.forEach((childOpt, childIndex) => {
+                if (childOpt.parent_option_id === opt.option_id) {
+                    const childQtyStr = childOpt.quantity && childOpt.quantity > 1 ? ` x${childOpt.quantity}` : '';
+                    const childQuantity = childOpt.quantity || 1;
+                    const childUnitPrice = (parseFloat(childOpt.option_price) || 0) + (parseFloat(childOpt.child_price) || 0);
+                    const childTotalPrice = childUnitPrice * childQuantity;
+                    const childPriceStr = childTotalPrice > 0 ? ` +£${childTotalPrice.toFixed(2)}` : '';
+                    
+                    html += `<span class="d-block ps-3">&nbsp;&nbsp;+ ${childOpt.option_name}${childQtyStr}${childPriceStr}</span>`;
+                    rendered.add(childIndex);
+                }
+            });
+        });
+        
+        return html;
+    },
+
+    async loadTimeSlots() {
+        this.updateAsapReadyTime();
+        const select = document.getElementById('scheduledTimeSelect');
+        select.innerHTML = '<option value="">Loading times...</option>';
+        
+        const method = this.state.deliveryMethod || 'collection';
+        
+        try {
+            const response = await fetch(`${BASE_PATH}/checkout/get-timeslots?method=${method}`);
+            const data = await response.json();
+            
+            if (data.success && data.slots.length > 0) {
+                select.innerHTML = '<option value="">Choose a time...</option>';
+                data.slots.forEach(slot => {
+                    select.innerHTML += `<option value="${slot.value}">${slot.label}</option>`;
+                });
+            } else {
+                select.innerHTML = '<option value="">No times available choose ASAP</option>';
+                // If no slots, force ASAP
+                document.getElementById('timeAsap').checked = true;
+                this.toggleTimeSelection();
+            }
+        } catch (error) {
+            console.error('Failed to load time slots:', error);
+            select.innerHTML = '<option value="">Error loading times</option>';
+        }
+    },
+
+    updateAsapReadyTime() {
+        const method = this.state.deliveryMethod || 'collection';
+        const readyMins = READY_TIMES[method] || 30;
+        const asapText = document.getElementById('asapReadyTime');
+        if (asapText) {
+            asapText.textContent = `(Ready in ${readyMins} mins)`;
+        }
+    },
+
+    toggleTimeSelection() {
+        const isScheduled = document.getElementById('timeScheduled').checked;
+        const section = document.getElementById('scheduledTimeSection');
+        
+        if (isScheduled) {
+            section.classList.remove('d-none');
+            document.getElementById('scheduledTimeSelect').required = true;
+        } else {
+            section.classList.add('d-none');
+            document.getElementById('scheduledTimeSelect').required = false;
+        }
+    },
+
+    // ========================================
+    // TOTALS & CALCULATIONS
+    // ========================================
+
+    calculateTotals() {
+        let subtotal = 0;
+        this.state.cart.forEach(item => {
+            subtotal += Math.round((item.total_price * item.quantity) * 100) / 100;
+        });
+        subtotal = Math.round(subtotal * 100) / 100;
+        
+        this.state.totals.subtotal = subtotal;
+        this.state.totals.deliveryFee = (!window.TABLE_MODE && this.state.deliveryMethod === 'delivery') ? this.state.deliveryFee : 0;
+        this.state.totals.tip = this.state.tipAmount;
+        
+        let discount = 0;
+        this.state.autoPromos.forEach(promo => {
+            discount += promo.discount || 0;
+        });
+        this.state.appliedPromos.forEach(promo => {
+            discount += promo.discount || 0;
+        });
+        
+        this.state.totals.discount = discount;
+        this.state.totals.final = Math.max(0, subtotal + this.state.totals.deliveryFee + this.state.totals.tip - discount - this.state.pointsDiscount);
+        
+        this.updateTotalsDisplay();
+        this.updateSubmitButton();
+    },
+
+    updateTotalsDisplay() {
+        const t = this.state.totals;
+        
+        document.getElementById('subtotalDisplay').textContent = `£${t.subtotal.toFixed(2)}`;
+        
+        const deliveryRow = document.getElementById('deliveryFeeRow');
+        if (t.deliveryFee > 0) {
+            deliveryRow.classList.remove('d-none');
+            document.getElementById('deliveryFeeTotal').textContent = `£${t.deliveryFee.toFixed(2)}`;
+        } else {
+            deliveryRow.classList.add('d-none');
+        }
+        
+        const tipRow = document.getElementById('tipRow');
+        if (t.tip > 0) {
+            tipRow.classList.remove('d-none');
+            document.getElementById('tipTotal').textContent = `£${t.tip.toFixed(2)}`;
+        } else {
+            tipRow.classList.add('d-none');
+        }
+        
+        // Itemised discounts
+        const discountContainer = document.getElementById('discountItemsContainer');
+        if (discountContainer) {
+            const allDiscounts = [...this.state.autoPromos, ...this.state.appliedPromos];
+            
+            if (allDiscounts.length > 0) {
+                discountContainer.innerHTML = allDiscounts.map(promo => `
+                    <div class="discount-item-row">
+                        <span class="discount-label">${promo.code}</span>
+                        <strong>-£${promo.discount.toFixed(2)}</strong>
+                    </div>
+                `).join('');
+            } else {
+                discountContainer.innerHTML = '';
+            }
+        }
+
+        // Points discount row
+        const pointsDiscountRow = document.getElementById('pointsDiscountRow');
+        if (pointsDiscountRow) {
+            if (this.state.pointsDiscount > 0) {
+                pointsDiscountRow.classList.remove('d-none');
+                document.getElementById('pointsDiscountTotal').textContent = `-£${this.state.pointsDiscount.toFixed(2)}`;
+            } else {
+                pointsDiscountRow.classList.add('d-none');
+            }
+        }
+        
+        document.getElementById('finalTotal').textContent = `£${t.final.toFixed(2)}`;
+        const finalTotalDesktop = document.getElementById('finalTotalDesktop');
+        if (finalTotalDesktop) {
+            finalTotalDesktop.textContent = `£${t.final.toFixed(2)}`;
+        }
+        const summaryTotalBadge = document.getElementById('summaryTotalBadge');
+        if (summaryTotalBadge) {
+            summaryTotalBadge.textContent = `£${t.final.toFixed(2)}`;
+        }
+        
+        // Update loyalty points with actual earn rate and bonus multiplier
+        if (document.getElementById('pointsEarnedStub')) {
+            const earnableSubtotal = t.subtotal - t.discount - this.state.pointsDiscount;
+            const basePoints = Math.floor(earnableSubtotal * LOYALTY_EARN_RATE);
+            const points = Math.floor(basePoints * LOYALTY_BONUS_MULTIPLIER);
+            document.getElementById('pointsEarnedStub').textContent = points.toLocaleString();
+        }
+
+        // Update promo progress messages
+        this.updatePromoProgress();
+        // Update summary item count
+        const summaryItemCount = document.getElementById('summaryItemCount');
+        if (summaryItemCount) {
+            const count = this.state.cart.reduce((sum, item) => sum + item.quantity, 0);
+            summaryItemCount.textContent = `(${count} item${count !== 1 ? 's' : ''})`;
+        }
+
+        // Update discount teaser
+        const discountTeaser = document.getElementById('summaryDiscountTeaser');
+        const discountTeaserText = document.getElementById('summaryDiscountTeaserText');
+        if (discountTeaser && discountTeaserText) {
+            const totalSaving = t.discount + this.state.pointsDiscount;
+            if (totalSaving > 0) {
+                discountTeaserText.textContent = `Includes £${totalSaving.toFixed(2)} savings`;
+                discountTeaser.classList.remove('d-none');
+            } else {
+                discountTeaser.classList.add('d-none');
+            }
+        }
+    },
+
+    updatePromoProgress() {
+        const section = document.getElementById('promoProgressSection');
+        const container = document.getElementById('promoProgressMessages');
+        if (!section || !container) return;
+        
+        const subtotal = this.state.totals.subtotal;
+        const deliveryFee = this.state.totals.deliveryFee;
+        const progressMessages = [];
+        
+        // Check each auto-apply promo for progress
+        AUTO_PROMOS_CONFIG.forEach(promo => {
+            // Skip if method doesn't match
+            if (promo.methods && promo.methods.length > 0) {
+                if (!promo.methods.includes(this.state.deliveryMethod)) return;
+            }
+            
+            // Only show progress if we haven't met minOrder yet
+            if (promo.minOrder > subtotal) {
+                const remaining = (promo.minOrder - subtotal).toFixed(2);
+                let savingText = '';
+                
+                if (promo.type === 'percent') {
+                    savingText = `${promo.value}% off`;
+                } else if (promo.type === 'fixed') {
+                    savingText = `£${promo.value.toFixed(2)} off`;
+                } else if (promo.type === 'delivery_fee') {
+                    savingText = 'free delivery';
+                }
+                
+                let methodHint = '';
+                if (promo.methods && promo.methods.length === 1) {
+                    methodHint = ` (${promo.methods[0]})`;
+                }
+                
+                progressMessages.push(`Spend £${remaining} more for ${savingText}${methodHint}`);
+            }
+        });
+        
+        if (progressMessages.length > 0) {
+            container.innerHTML = progressMessages.map(msg => 
+                `<div class="text-primary mb-1"><i class="bi bi-info-circle me-1"></i>${msg}</div>`
+            ).join('');
+            section.classList.remove('d-none');
+        } else {
+            section.classList.add('d-none');
+        }
+    },
+
+    // ========================================
+    // PROMO CODES
+    // ========================================
+
+    async checkAutoPromos() {
+        try {
+            const emailField = document.querySelector('input[name="email"]');
+            const email = emailField ? emailField.value.trim() : '';
+            const response = await fetch(BASE_PATH + '/checkout/check-auto-promos', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    subtotal: this.state.totals.subtotal,
+                    delivery_fee: this.state.deliveryFee,
+                    customer_id: null,
+                    email: email,
+                    method: this.state.deliveryMethod
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                this.state.removedPromos = [];
+                this.displayRemovedPromos();
+                if (data.applied.length > 0) {
+                    // Enrich with stackableWithPoints from config
+                    this.state.autoPromos = data.applied.map(promo => {
+                        const config = AUTO_PROMOS_CONFIG.find(p => p.code === promo.code);
+                        return {
+                            ...promo,
+                            stackableWithPoints: config?.stackableWithPoints ?? LOYALTY_DEFAULT_STACKABLE
+                        };
+                    });
+                    this.displayAutoPromos();
+                } else {
+                    this.state.autoPromos = [];
+                    this.displayAutoPromos();
+                }
+                this.calculateTotals();
+                this.checkPointsPromoConflict();
+                this.updatePointsSliderMax();
+            }
+        } catch (error) {
+            console.error('Auto promo check failed:', error);
+        }
+    },
+
+    async applyPromoCode() {
+        const input = document.getElementById('promoCodeInput');
+        const code = input.value.trim().toUpperCase();
+        
+        if (!code) return;
+        
+        // If points are active, warn user (only if loyalty enabled)
+        if (LOYALTY_CAN_REDEEM && this.state.pointsOverridePromos && this.state.pointsToRedeem > 0) {
+            const result = await Swal.fire({
+                title: 'Points Active',
+                text: 'Adding a promo code will disable your points redemption. Continue?',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Add Promo',
+                cancelButtonText: 'Keep Points'
+            });
+            
+            if (!result.isConfirmed) {
+                return;
+            }
+            
+            // User wants promo - disable points first
+            this.restorePromos();
+        }
+        
+        const allApplied = [...this.state.autoPromos, ...this.state.appliedPromos];
+        if (allApplied.some(p => p.code === code)) {
+            Swal.fire({
+                icon: 'info',
+                title: 'Already Applied',
+                text: 'This promo code is already active',
+                toast: true,
+                position: 'top-end',
+                timer: 2000,
+                showConfirmButton: false,
+                timerProgressBar: true
+            });
+            return;
+        }
+        
+        try {
+            const emailField = document.querySelector('input[name="email"]');
+            const email = emailField ? emailField.value.trim() : '';
+            const response = await fetch(BASE_PATH + '/checkout/apply-promo', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    code: code,
+                    subtotal: this.state.totals.subtotal,
+                    delivery_fee: this.state.deliveryFee,
+                    customer_id: null,
+                    email: email,
+                    current_codes: [...this.state.autoPromos.map(p => p.code), ...this.state.appliedPromos.map(p => p.code)],
+                    method: this.state.deliveryMethod
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (!data.success) {
+                this.showPromoFeedback(`<span class="text-danger"><i class="bi bi-x-circle me-1"></i>${data.error}</span>`);
+                return;
+            }
+            
+            const thisPromo = data.applied.find(p => p.code === code);
+            const thisPromoDiscount = thisPromo ? thisPromo.discount : 0;
+            
+            this.state.appliedPromos = data.applied.filter(p => 
+                !this.state.autoPromos.some(a => a.code === p.code)
+            );
+            
+            this.state.autoPromos = this.state.autoPromos.filter(autoPromo => 
+                data.applied.some(p => p.code === autoPromo.code)
+            );
+            
+            this.state.removedPromos = data.removed || [];
+            this.state.totals.discount = data.total_discount;
+            
+            this.displayAutoPromos();
+            this.displayManualPromos();
+            this.displayRemovedPromos();
+            this.calculateTotals();
+            
+            input.value = '';
+            
+            this.showPromoFeedback(`<span class="text-success"><i class="bi bi-check-circle me-1"></i>${code} applied - saving £${thisPromoDiscount.toFixed(2)}</span>`);
+            
+        } catch (error) {
+            console.error('Promo application failed:', error);
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: 'Failed to apply promo code. Please try again.'
+            });
+        }
+    },
+
+    displayAutoPromos() {
+
+    },
+
+    displayManualPromos() {
+
+    },
+
+    displayRemovedPromos() {
+
+    },
+
+    removePromo(code) {
+        this.state.appliedPromos = this.state.appliedPromos.filter(p => p.code !== code);
+        this.state.removedPromos = [];
+        
+        this.displayManualPromos();
+        this.displayRemovedPromos();
+        this.calculateTotals();
+        this.checkAutoPromos();
+        this.checkPointsPromoConflict();
+        this.updatePointsSliderMax();
+    },
+
+    setCustomTip(amount) {
+        this.state.tipAmount = parseFloat(amount) || 0;
+        document.querySelectorAll('input[name="tip_amount"]').forEach(input => {
+            input.checked = false;
+        });
+        this.calculateTotals();
+    },
+
+    // ========================================
+    // POINTS REDEMPTION
+    // ========================================
+
+    togglePointsRedemption() {
+        const toggle = document.getElementById('usePointsToggle');
+        const container = document.getElementById('pointsSliderContainer');
+        const slider = document.getElementById('pointsSlider');
+        
+        if (!toggle.checked) {
+            // Turning OFF - restore promos
+            this.restorePromos();
+            return;
+        }
+        
+        // Turning ON - check for conflicts
+        const conflictingPromos = this.getConflictingPromos();
+        
+        if (conflictingPromos.length === 0) {
+            // No conflicts - just show slider
+            container.classList.remove('d-none');
+            document.getElementById('pointsPromoConflict').classList.add('d-none');
+            document.getElementById('pointsActiveNote').classList.add('d-none');
+            this.updatePointsSlider(slider.value);
+            return;
+        }
+        
+        // Has conflicts - show choice dialog
+        toggle.checked = false; // Revert until user confirms
+        this.showPointsPromoChoice(conflictingPromos);
+    },
+
+    getConflictingPromos() {
+        const allApplied = [...this.state.autoPromos, ...this.state.appliedPromos];
+        const conflicting = [];
+        
+        allApplied.forEach(promo => {
+            // Find full promo config to check stackableWithPoints
+            const promoConfig = AUTO_PROMOS_CONFIG.find(p => p.code === promo.code);
+            
+            // Check stackableWithPoints - fall back to global default if not specified
+            let stackableWithPoints = LOYALTY_DEFAULT_STACKABLE;
+            if (promoConfig && typeof promoConfig.stackableWithPoints !== 'undefined') {
+                stackableWithPoints = promoConfig.stackableWithPoints;
+            } else if (promo.stackableWithPoints !== undefined) {
+                stackableWithPoints = promo.stackableWithPoints;
+            }
+            
+            if (!stackableWithPoints) {
+                conflicting.push({
+                    code: promo.code,
+                    discount: promo.discount,
+                    isAuto: this.state.autoPromos.some(a => a.code === promo.code)
+                });
+            }
+        });
+        
+        return conflicting;
+    },
+
+    showPointsPromoChoice(conflictingPromos) {
+        const totalPromoDiscount = conflictingPromos.reduce((sum, p) => sum + p.discount, 0);
+        const pointsValue = LOYALTY_POINTS_BALANCE / LOYALTY_REDEMPTION_RATE;
+        
+        let promoListHtml = conflictingPromos.map(p => 
+            `<li><strong>${p.code}</strong> (-£${p.discount.toFixed(2)})${p.isAuto ? ' <span class="text-muted">[auto]</span>' : ''}</li>`
+        ).join('');
+        
+        Swal.fire({
+            title: 'Choose Your Discount',
+            html: `
+                <div class="text-start">
+                    <p class="mb-2">Points cannot be combined with:</p>
+                    <ul class="mb-3">${promoListHtml}</ul>
+                    <p class="mb-2"><strong>Total promo savings: £${totalPromoDiscount.toFixed(2)}</strong></p>
+                    <hr>
+                    <p class="mb-0"><strong>Your points:</strong> ${LOYALTY_POINTS_BALANCE.toLocaleString()} pts (worth up to £${pointsValue.toFixed(2)})</p>
+                </div>
+            `,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Use Points',
+            cancelButtonText: 'Keep Promos',
+            reverseButtons: true
+        }).then((result) => {
+            if (result.isConfirmed) {
+                this.activatePointsOverPromos(conflictingPromos);
+            }
+        });
+    },
+
+    activatePointsOverPromos(conflictingPromos) {
+        // Store what we're removing so we know to show the restore note
+        this.state.removedForPoints = conflictingPromos.map(p => p.code);
+        this.state.pointsOverridePromos = true;
+        
+        // Remove conflicting promos from state
+        conflictingPromos.forEach(p => {
+            this.state.autoPromos = this.state.autoPromos.filter(a => a.code !== p.code);
+            this.state.appliedPromos = this.state.appliedPromos.filter(a => a.code !== p.code);
+        });
+        
+        // Update promo displays
+        this.displayAutoPromos();
+        this.displayManualPromos();
+        
+        // Enable points slider
+        const toggle = document.getElementById('usePointsToggle');
+        const container = document.getElementById('pointsSliderContainer');
+        const slider = document.getElementById('pointsSlider');
+        
+        toggle.checked = true;
+        toggle.disabled = false;
+        container.classList.remove('d-none');
+        document.getElementById('pointsPromoConflict').classList.add('d-none');
+        document.getElementById('pointsActiveNote').classList.remove('d-none');
+        
+        this.updatePointsSlider(slider.value);
+        this.calculateTotals();
+    },
+
+    restorePromos() {
+        // Clear points
+        this.state.pointsToRedeem = 0;
+        this.state.pointsDiscount = 0;
+        this.state.pointsOverridePromos = false;
+        this.state.removedForPoints = [];
+        
+        document.getElementById('pointsToRedeemInput').value = 0;
+        
+        // Reset toggle and hide slider
+        const toggle = document.getElementById('usePointsToggle');
+        const container = document.getElementById('pointsSliderContainer');
+        
+        if (toggle) {
+            toggle.checked = false;
+        }
+        if (container) {
+            container.classList.add('d-none');
+        }
+        
+        // Hide the active note
+        document.getElementById('pointsActiveNote')?.classList.add('d-none');
+        
+        // Re-check auto promos (this will restore eligible ones)
+        this.checkAutoPromos();
+        
+        this.calculateTotals();
+    },
+
+    updatePointsSlider(value) {
+        const points = parseInt(value);
+        const discount = points / LOYALTY_REDEMPTION_RATE;
+        
+        this.state.pointsToRedeem = points;
+        this.state.pointsDiscount = discount;
+        
+        document.getElementById('pointsSliderValue').textContent = points.toLocaleString() + ' points';
+        document.getElementById('pointsDiscountValue').textContent = '-£' + discount.toFixed(2);
+        document.getElementById('pointsToRedeemInput').value = points;
+        
+        this.calculateTotals();
+    },
+
+    checkPointsPromoConflict() {
+        if (!LOYALTY_CAN_REDEEM) return;
+        
+        const toggle = document.getElementById('usePointsToggle');
+        const conflictAlert = document.getElementById('pointsPromoConflict');
+        const activeNote = document.getElementById('pointsActiveNote');
+        const section = document.getElementById('pointsRedemptionSection');
+        
+        if (!toggle || !section) return;
+        
+        // If user has chosen points over promos, don't interfere
+        if (this.state.pointsOverridePromos) {
+            conflictAlert?.classList.add('d-none');
+            return;
+        }
+        
+        const conflictingPromos = this.getConflictingPromos();
+        
+        if (conflictingPromos.length > 0 && !toggle.checked) {
+            // Show warning but don't disable - user can click and get choice
+            const promoNames = conflictingPromos.map(p => p.code).join(', ');
+            document.getElementById('pointsPromoConflictText').textContent = 
+                `Points cannot be combined with: ${promoNames}. Toggle to choose.`;
+            conflictAlert?.classList.remove('d-none');
+            activeNote?.classList.add('d-none');
+        } else {
+            conflictAlert?.classList.add('d-none');
+        }
+    },
+
+    updatePointsSliderMax() {
+        if (!LOYALTY_CAN_REDEEM) return;
+        
+        const slider = document.getElementById('pointsSlider');
+        if (!slider) return;
+        
+        // Max is minimum of: customer balance, order subtotal (minus promo discount)
+        const remainingSubtotal = this.state.totals.subtotal - this.state.totals.discount;
+        const maxBySubtotal = Math.floor(remainingSubtotal * LOYALTY_REDEMPTION_RATE);
+        const maxPoints = Math.min(LOYALTY_POINTS_BALANCE, maxBySubtotal);
+        const cappedMax = Math.floor(maxPoints / LOYALTY_REDEMPTION_RATE) * LOYALTY_REDEMPTION_RATE;
+        
+        slider.max = Math.max(cappedMax, LOYALTY_MIN_REDEEM);
+        
+        // If current value exceeds new max, adjust it
+        if (parseInt(slider.value) > cappedMax) {
+            slider.value = cappedMax;
+            this.updatePointsSlider(cappedMax);
+        }
+    },
+
+    showPromoFeedback(html, autoClear = true) {
+        const feedback = document.getElementById('promoFeedback');
+        if (!feedback) return;
+        
+        feedback.innerHTML = html;
+        feedback.classList.remove('d-none');
+        
+        if (autoClear) {
+            setTimeout(() => {
+                feedback.classList.add('d-none');
+                feedback.innerHTML = '';
+            }, 4000);
+        }
+    },
+
+    clearPromoFeedback() {
+        const feedback = document.getElementById('promoFeedback');
+        if (feedback) {
+            feedback.classList.add('d-none');
+            feedback.innerHTML = '';
+        }
+    },
+
+    // ========================================
+    // EMAIL HANDLING
+    // ========================================
+
+    handleEmailChange(email) {
+        this.revalidatePromos(email);
+    },
+
+    async revalidatePromos(email) {
+        if (!email || email.length === 0) return;
+        if (this.state.appliedPromos.length === 0 && this.state.autoPromos.length === 0) return;
+        
+        try {
+            const validManualPromos = [];
+            for (const promo of this.state.appliedPromos) {
+                const response = await fetch(BASE_PATH + '/checkout/apply-promo', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        code: promo.code,
+                        subtotal: this.state.totals.subtotal,
+                        delivery_fee: this.state.deliveryFee,
+                        customer_id: null,
+                        email: email,
+                        current_codes: [],
+                        method: this.state.deliveryMethod
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    validManualPromos.push(promo);
+                } else {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Code Removed',
+                        text: `${promo.code}: ${data.error}`,
+                        toast: true,
+                        position: 'top-end',
+                        timer: 3000,
+                        showConfirmButton: false,
+                        timerProgressBar: true
+                    });
+                }
+            }
+            
+            this.state.appliedPromos = validManualPromos;
+            this.state.removedPromos = [];
+            await this.checkAutoPromos();
+
+            this.displayManualPromos();
+            this.displayRemovedPromos();
+            this.calculateTotals();
+            
+        } catch (error) {
+            console.error('Promo revalidation failed:', error);
+        }
+    },
+
+    continueAsGuest() {
+        this.state.continueAsGuestOverride = true;
+        const email = document.getElementById('email')?.value || '';
+        sessionStorage.setItem('continue_as_guest_email', email);
+        
+        const alert = document.getElementById('accountExistsAlert');
+        const msg = document.getElementById('guestContinueMsg');
+        
+        // Fade out alert
+        alert.style.opacity = '0';
+        
+        setTimeout(() => {
+            alert.classList.add('d-none');
+            
+            // Show and fade in the continue message
+            msg.classList.remove('d-none');
+            requestAnimationFrame(() => {
+                msg.style.opacity = '1';
+            });
+        }, 300);
+    },
+
+    // ========================================
+    // FORM SUBMISSION
+    // ========================================
+
+    checkInitialAvailability() {
+        const closedAlert = document.getElementById('shopClosedAlert');
+        if (closedAlert) {
+            this.state.shopClosed = true;
+            this.disableCheckout('Shop is currently closed');
+            return;
+        }
+        
+        // Check if selected method is still available
+        // This data comes from sessionStorage but method might no longer be available
+        if (this.state.deliveryMethod) {
+            const availableMethods = document.body.dataset.availableMethods;
+            // We'll check via API on submit instead - simpler
+        }
+    },
+
+    disableCheckout(reason) {
+        const submitBtn = document.getElementById('placeOrderBtn');
+        const mobileBtn = document.querySelector('.mobile-checkout-bar button[type="submit"]');
+        
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = `<i class="bi bi-x-circle me-2"></i>${reason}`;
+        }
+        if (mobileBtn) {
+            mobileBtn.disabled = true;
+            mobileBtn.innerHTML = reason;
+        }
+    },
+
+    async checkAvailabilityBeforeSubmit() {
+        try {
+            const response = await fetch(`${BASE_PATH}/checkout/check-availability`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ method: this.state.deliveryMethod })
+            });
+            const result = await response.json();
+            
+            if (!result.available) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Unable to Place Order',
+                    text: result.message
+                });
+                return false;
+            }
+            return true;
+        } catch (error) {
+            console.error('Availability check failed:', error);
+            // Allow submission on network error - server will validate anyway
+            return true;
+        }
+    },
+    async submitCheckout(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        const available = await this.checkAvailabilityBeforeSubmit();
+        if (!available) return;
+        const form = event.target;
+
+        // Validate address first for delivery orders
+        if (!window.TABLE_MODE && this.state.deliveryMethod === 'delivery') {
+            const addressCheck = await this.validateAddressForSubmit();
+            if (!addressCheck.valid) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Address Required',
+                    text: addressCheck.message
+                });
+                document.getElementById('deliveryAddressSection').scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
+
+            // Validate Uber quote if enabled
+            const uberCheck = await this.validateUberQuoteForSubmit();
+            if (!uberCheck.valid) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Delivery Unavailable',
+                    text: uberCheck.error
+                });
+                return;
+            }
+        }
+
+        // Check form validity
+        if (!form.checkValidity()) {
+            form.classList.add('was-validated');
+            
+            const firstInvalid = form.querySelector(':invalid');
+            if (firstInvalid) {
+                firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                firstInvalid.focus();
+            }
+            
+            return;
+        }
+        
+        const formData = new FormData(form);
+        const data = Object.fromEntries(formData.entries());
+        
+        if (window.TABLE_MODE) {
+            data.table_mode = '1';
+            data.table_number = document.getElementById('tableNumberInput')?.value || '';
+        }
+
+        // Add promo codes to form data
+        const allPromoCodes = [
+            ...this.state.autoPromos.map(p => p.code),
+            ...this.state.appliedPromos.map(p => p.code)
+        ];
+        data.promo_codes = JSON.stringify(allPromoCodes);
+
+        data.continue_as_guest = this.state.continueAsGuestOverride ? '1' : '';
+        
+        // Disable submit button
+        const submitBtn = document.getElementById('placeOrderBtn');
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
+        
+        try {
+            const response = await fetch(`${BASE_PATH}/checkout/process`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: new URLSearchParams(data)
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                window.location.href = BASE_PATH + result.redirect;
+            } else if (result.error === 'account_exists') {
+                // Show account exists alert
+                document.getElementById('accountExistsAlert').classList.remove('d-none');
+                document.getElementById('accountExistsAlert').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                
+                submitBtn.disabled = false;
+                this.updateSubmitButton();
+            } else if (result.error_type === 'unavailable_items') {
+                // Items became unavailable during checkout
+                const productIds = result.unavailable.map(u => u.product_id);
+                const names = result.unavailable.map(u => u.product_name);
+                
+                Cart.removeByProductIds(productIds);
+                this.state.cart = Cart.get();
+                document.getElementById('cartDataInput').value = JSON.stringify(this.state.cart);
+                this.renderCartItems();
+                this.calculateTotals();
+                
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Items Unavailable',
+                    html: `These items are no longer available:<br><strong>${names.join(', ')}</strong><br><br>They have been removed from your cart.`,
+                    confirmButtonText: 'Review Cart'
+                });
+                
+                submitBtn.disabled = false;
+                this.updateSubmitButton();
+                
+            } else if (result.error_type === 'below_minimum') {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Minimum Order Not Met',
+                    html: result.error,
+                    showCancelButton: true,
+                    confirmButtonText: 'Add More Items',
+                    cancelButtonText: 'OK'
+                }).then((swalResult) => {
+                    if (swalResult.isConfirmed) {
+                        window.location.href = `${BASE_PATH}/order-online`;
+                    }
+                });
+                
+                submitBtn.disabled = false;
+                this.updateSubmitButton();
+                
+            } else if (result.error_type === 'offer_error') {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Offer Invalid',
+                    html: result.error,
+                    confirmButtonText: 'Review Cart'
+                }).then(() => {
+                    Cart.enforceOfferRules();
+                    this.state.cart = Cart.get();
+                    document.getElementById('cartDataInput').value = JSON.stringify(this.state.cart);
+                    this.renderCartItems();
+                    this.calculateTotals();
+                });
+                
+                submitBtn.disabled = false;
+                this.updateSubmitButton();
+                
+            } else if (result.error_type === 'scheduled_time_invalid') {
+                // Time slot no longer valid - reload slots and show error
+                await this.loadTimeSlots();
+                
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Time No Longer Available',
+                    text: result.errors?.scheduled_time || 'Please select a new time slot.',
+                    confirmButtonText: 'OK'
+                }).then(() => {
+                    document.getElementById('scheduledTimeSelect').scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    document.getElementById('scheduledTimeSelect').focus();
+                });
+                
+                submitBtn.disabled = false;
+                this.updateSubmitButton();
+                
+            } else if (result.errors) {
+                // Generic validation errors
+                const errorMessages = Object.values(result.errors).join('<br>');
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Validation Error',
+                    html: errorMessages
+                });
+                
+                submitBtn.disabled = false;
+                this.updateSubmitButton();
+                
+            } else {
+                throw new Error(result.error || 'Checkout failed');
+            }
+        } catch (error) {
+            console.error('Checkout error:', error);
+            
+            Swal.fire({
+                icon: 'error',
+                title: 'Checkout Failed',
+                text: error.message || 'Something went wrong. Please try again.'
+            });
+            
+            submitBtn.disabled = false;
+            this.updateSubmitButton();
+        }
+    }
+};
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', () => {
+    CheckoutManager.init();
+});
+</script>
+{/block}

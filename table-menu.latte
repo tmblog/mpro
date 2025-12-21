@@ -1,0 +1,537 @@
+{layout '../layouts/main.latte'}
+
+{block title}Menu - Table {$table_number}{/block}
+
+{block head}
+<link rel="stylesheet" href="{$base_path}/assets/css/menu.css">
+<link rel="stylesheet" href="{$base_path}/assets/css/offers.css">
+<link rel="stylesheet" href="{$base_path}/assets/css/upsells.css">
+<script>
+    window.TABLE_MODE = true;
+    window.ORDER_METHOD = 'table';
+</script>
+{/block}
+
+{block content}
+{* Page Header *}
+<section class="menu-page-header">
+    <div class="container-fluid">
+        <h1>Menu</h1>
+    </div>
+</section>
+
+<div class="container-fluid menu-container">
+    {* Info Bar - Table Number, Offers, Promos *}
+    <div class="menu-info-bar">
+        <div class="d-flex flex-wrap justify-content-start gap-2">
+            {* Table indicator *}
+            <span class="badge bg-dark p-2">
+                <i class="bi bi-grid-3x3-gap me-1"></i>Table <span class="table-number-display">{$table_number}</span>
+            </span>
+            
+            {* Offers *}
+            {foreach $active_offers as $offer}
+                {if $offer['type'] === 'free_on_spend'}
+                    <span class="badge bg-success p-2">
+                        <i class="bi bi-gift me-1"></i>{$offer['name']} on £{number_format($offer['minSpend'], 0)}+
+                    </span>
+                {elseif $offer['type'] === 'bogof'}
+                    <span class="badge bg-danger p-2">
+                        <i class="bi bi-fire me-1"></i>{$offer['name']}
+                    </span>
+                {elseif $offer['type'] === 'buy_x_get_free'}
+                    <span class="badge bg-warning text-dark p-2">
+                        <i class="bi bi-plus-circle me-1"></i>{$offer['name']}
+                    </span>
+                {/if}
+            {/foreach}
+            
+            {* Auto promos *}
+            {foreach $auto_promos as $promo}
+                <span class="badge bg-info p-2" 
+                      data-promo-code="{$promo['code']}"
+                      data-promo-methods="{$promo['methods']|json|noescape}">
+                    <i class="bi bi-tag-fill me-1"></i>{$promo['description']}
+                </span>
+            {/foreach}
+        </div>
+    </div>
+
+    {* Sticky Row: Categories + Method Toggle *}
+    <div class="row menu-sticky-row">
+        {* Categories Navigation *}
+        <div class="col-12 col-lg-8 mb-2 mb-lg-0">
+            <nav class="menu-categories-nav bg-white rounded-1 py-2 px-3 shadow-sm">
+                <div class="menu-categories-wrapper" id="categoriesWrapper">
+                    <button type="button" class="categories-scroll-btn categories-scroll-btn--left" id="categoriesScrollLeft" aria-label="Scroll left">
+                        <i class="bi bi-chevron-left"></i>
+                    </button>
+                        <div class="nav" id="categoriesNav">
+                            {foreach $categories as $category}
+                                {var $categoryId = str_replace(' ', '-', strtolower($category))}
+                                <a class="nav-link{if $category === 'Featured'} featured-link{/if}" 
+                                href="#{$categoryId}"
+                                data-category="{$categoryId}">
+                                    {if $category === 'Featured'}<i class="bi bi-star-fill me-1"></i>{/if}{$category}
+                                </a>
+                            {/foreach}
+                        </div>
+                    <button type="button" class="categories-scroll-btn categories-scroll-btn--right" id="categoriesScrollRight" aria-label="Scroll right">
+                        <i class="bi bi-chevron-right"></i>
+                    </button>
+                </div>
+            </nav>
+        </div>
+        
+        {* Method Toggle (Table/Collection) *}
+        <div class="col-12 col-lg-4 menu-methods-col">
+            <div class="delivery-methods-section">
+                {if !$shop_status['isOpen']}
+                    <div class="alert alert-danger mb-0 py-2 px-2 small">
+                        <i class="bi bi-x-circle"></i> {$shop_status['message']}
+                    </div>
+                {else}
+                    <div class="bg-white p-2 rounded-1 shadow-sm">
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <span class="small text-muted">
+                                <i class="bi bi-grid-3x3-gap me-1"></i>Table <strong class="table-number-display">{$table_number}</strong>
+                            </span>
+                        </div>
+                        
+                        {if count($table_methods) > 1}
+                            <div class="btn-group w-100" role="group">
+                                {foreach $table_methods as $method}
+                                    <button type="button" 
+                                            class="btn btn-sm {$method === 'table' ? 'btn-outline-dark' : 'btn-outline-warning'} table-method-btn"
+                                            data-method="{$method}">
+                                        <i class="bi bi-{$method === 'table' ? 'grid-3x3-gap' : 'bag-check'}"></i>
+                                        {$method === 'table' ? 'Eat In' : 'Collection'}
+                                    </button>
+                                {/foreach}
+                            </div>
+                        {else}
+                            <div class="text-center py-1">
+                                <span class="badge bg-dark">
+                                    <i class="bi bi-grid-3x3-gap me-1"></i>Dine In
+                                </span>
+                            </div>
+                        {/if}
+                    </div>
+                {/if}
+            </div>
+        </div>
+    </div>
+
+    {* Main Content Row: Products + Cart *}
+    <div class="row menu-main-row">
+        {* Products Column *}
+        <div class="col-12 col-lg-8">
+            {* Free Items Carousel *}
+            {if !empty($site['features']['offers']) && !empty($carousel_products)}
+                <section class="offers-carousel-section">
+                    <h5 class="mb-3">
+                        <i class="bi bi-gift-fill me-2"></i>FREE With Your Order
+                    </h5>
+                    <div class="offers-carousel" id="offersCarousel">
+                        {foreach $carousel_products as $item}
+                            {var $product = $item['product']}
+                            {var $offer = $item['offer']}
+                            <div class="offer-card locked" 
+                                data-product-id="{$product['id']}"
+                                data-offer-id="{$offer['id']}"
+                                data-min-spend="{$offer['minSpend']}"
+                                id="offerCard_{$product['id']}"
+                                data-product-name="{$product['name']}"
+                                data-product-price="{$product['price']}">
+                                <div class="offer-card-image">
+                                    {if !empty($product['img'])}
+                                        <img src="{$base_path}/assets/images/products/{$product['img']}" alt="{$product['name']}">
+                                    {else}
+                                        <i class="bi bi-image text-muted" style="font-size: 2rem;"></i>
+                                    {/if}
+                                    <div class="locked-overlay">
+                                        <i class="bi bi-lock-fill fs-4"></i>
+                                    </div>
+                                </div>
+                                <div class="offer-card-body">
+                                    <h6 title="{$product['name']}">{$product['name']}</h6>
+                                    <div class="offer-requirement">
+                                        Spend £{number_format($offer['minSpend'], 2)} to unlock
+                                    </div>
+                                    <div class="offer-value">
+                                        Worth £{number_format($product['price'], 2)}
+                                    </div>
+                                    <button type="button" 
+                                            class="btn btn-success btn-add-free d-none"
+                                            onclick="OffersManager.addFreeItem({$product['id']}, {$offer['id']})"
+                                            data-product-id="{$product['id']}">
+                                        <i class="bi bi-plus-circle me-1"></i>Add Free
+                                    </button>
+                                </div>
+                            </div>
+                        {/foreach}
+                    </div>
+                </section>
+            {/if}
+
+            {* Products by Category *}
+            <div id="productsContainer" class="bg-white p-3 rounded-1">
+                {* Featured Section *}
+                {if !empty($featured_products)}
+                    <section id="featured" class="menu-category-section">
+                        <h2 class="menu-category-header featured">
+                            <i class="bi bi-star-fill text-warning"></i>Featured
+                        </h2>
+                        <div class="menu-products-grid">
+                            {foreach $featured_products as $product}
+                                {include '../components/product-card-modern.latte', product => $product, active_offers => $active_offers}
+                            {/foreach}
+                        </div>
+                    </section>
+                {/if}
+                
+                {* Regular Categories *}
+                {foreach $products_by_category as $category => $categoryData}
+                    {var $categoryId = str_replace(' ', '-', strtolower($category))}
+                    <section id="{$categoryId}" class="menu-category-section">
+                        <h2 class="menu-category-header">{$category}</h2>
+                        {if $categoryData['description']}
+                            <p class="menu-category-description">{$categoryData['description']}</p>
+                        {/if}
+                        <div class="menu-products-grid">
+                            {foreach $categoryData['products'] as $product}
+                                {include '../components/product-card-modern.latte', product => $product, active_offers => $active_offers}
+                            {/foreach}
+                        </div>
+                    </section>
+                {/foreach}
+            </div>
+        </div>
+
+        {* Cart Column (Desktop) *}
+        <div class="col-12 col-lg-4 d-none d-lg-block menu-cart-column">
+            <div class="menu-cart-sidebar">
+                {* Cart Header *}
+                <div class="cart-sidebar__header p-3">
+                    <h5 class="fw-bold">Your Cart <span class="badge bg-dark text-white cart-count float-end">0</span></h5>
+                </div>
+                
+                {* Offer Progress - Sticky at top of items *}
+                {if !empty($site['features']['offers'])}
+                <div class="offer-progress-sticky d-none px-3 py-2" id="offerProgressSection">
+                    <span id="offerProgressMessages"></span>
+                </div>
+                {/if}
+                
+                {* Cart Items (scrollable) *}
+                <div class="cart-sidebar__body">
+                    <div id="cart-items">
+                        <div class="text-center text-muted py-4 empty-cart-message">
+                            <i class="bi bi-cart-x" style="font-size: 2rem;"></i>
+                            <p class="mt-2 mb-0 small">Your cart is empty</p>
+                        </div>
+                    </div>
+                    
+                    {* Upsells Carousel *}
+                    {if !empty($site['features']['upsells']) && !empty($upsell_products)}
+                    <div class="upsells-section d-none" id="upsellsSection">
+                        <div class="upsells-section__title">
+                            <i class="bi bi-heart-fill"></i> {$upsells['title'] ?? 'Customers also love'}
+                        </div>
+                        <div class="upsells-carousel" id="upsellsCarousel">
+                            {foreach $upsell_products as $product}
+                                {include '../components/upsell-card.latte', product: $product}
+                            {/foreach}
+                        </div>
+                    </div>
+                    {/if}
+                </div>
+                
+                {* Discount Preview *}
+                <div class="cart-sidebar__extras">
+                    <div id="discountPreview" class="d-none mb-2">
+                        <div id="discountProgress" class="small text-muted"></div>
+                        <div id="appliedDiscounts"></div>
+                    </div>
+                </div>
+                
+                {* Cart Footer (sticky bottom) *}
+                <div class="cart-sidebar__footer">
+                    <div class="subtotal-row">
+                        <span>Subtotal:</span>
+                        <span>
+                            <span id="cart-total-original" class="text-muted text-decoration-line-through me-2 d-none"></span>
+                            <span id="cart-total">£0.00</span>
+                        </span>
+                    </div>
+                    <button id="checkoutBtn" class="btn btn-success w-100" disabled 
+                            onclick="TableManager.goToCheckout()">
+                        <i class="bi bi-credit-card"></i> Checkout
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{* Mobile Cart Bar (Fixed Bottom) *}
+<div class="mobile-cart-bar d-lg-none" id="mobileCartBar" style="display: none;">
+    <div class="container-fluid">
+        <div class="d-flex justify-content-start align-items-start py-2">
+            <button class="btn btn-primary w-100 d-flex justify-content-between align-items-center" data-bs-toggle="offcanvas" data-bs-target="#mobileCartOffcanvas">
+                <span class="cart-count">0 items</span>
+                <span class="fw-bold">View Cart</span>
+                <strong id="mobile-cart-total">£0.00</strong>
+            </button>
+        </div>
+    </div>
+</div>
+
+{* Mobile Cart Offcanvas *}
+<div class="offcanvas offcanvas-bottom" tabindex="-1" id="mobileCartOffcanvas" style="height: 70vh;">
+    <div class="offcanvas-header bg-white text-dark border-bottom">
+        <h5 class="offcanvas-title">
+            Your Cart
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+    </div>
+    <div class="offcanvas-body">
+        <div id="mobile-cart-items">
+            <div class="text-center text-muted py-5 empty-cart-message">
+                <i class="bi bi-cart-x" style="font-size: 3rem;"></i>
+                <p class="mt-3">Your cart is empty</p>
+            </div>
+        </div>
+        
+        {* Upsells Carousel - Mobile *}
+        {if !empty($site['features']['upsells']) && !empty($upsell_products)}
+        <div class="upsells-section d-none" id="mobileUpsellsSection">
+            <div class="upsells-section__title">
+                <i class="bi bi-heart-fill"></i> {$upsells['title'] ?? 'Customers also love'}
+            </div>
+            <div class="upsells-carousel" id="mobileUpsellsCarousel">
+                {foreach $upsell_products as $product}
+                    {include '../components/upsell-card.latte', product: $product}
+                {/foreach}
+            </div>
+        </div>
+        {/if}
+    </div>
+    <div id="mobileDiscountPreview" class="border-top px-3 py-2 d-none">
+        <div id="mobileDiscountProgress" class="small text-muted mb-2"></div>
+        <div id="mobileAppliedDiscounts"></div>
+    </div>
+    {* Offer Progress *}
+    {if !empty($site['features']['offers'])}
+    <div class="offer-progress-section border-top px-3 py-2 d-none" id="mobileOfferProgressSection">
+        <div id="mobileOfferProgressMessages" class="small"></div>
+    </div>
+    {/if}
+    <div class="offcanvas-footer p-3 border-top bg-white">
+        <div class="d-flex justify-content-between mb-3">
+            <strong>Subtotal:</strong>
+            <span>
+                <span id="mobile-cart-total-original" class="text-muted text-decoration-line-through me-2 d-none"></span>
+                <strong id="mobile-cart-total-footer">£0.00</strong>
+            </span>
+        </div>
+        <button class="btn btn-success w-100" id="mobileCheckoutBtn" disabled
+                onclick="TableManager.goToCheckout()">
+            <i class="bi bi-credit-card"></i> Checkout
+        </button>
+    </div>
+</div>
+
+{* Product Detail Modal *}
+<div class="modal fade product-modal" id="productModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-body">
+                {* Image Side *}
+                <div class="product-modal__image">
+                    <img src="" alt="" id="modalProductImage">
+                    <div class="product-modal__image-placeholder d-none">
+                        <i class="bi bi-image"></i>
+                    </div>
+                </div>
+                
+                {* Content Side *}
+                <div class="product-modal__content">
+                    <button type="button" class="product-modal__close" data-bs-dismiss="modal">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                    
+                    <div class="product-modal__header">
+                        <h2 class="product-modal__title" id="modalProductTitle">Product Name</h2>
+                        <div class="product-modal__description" id="modalProductDescription"></div>
+                        <span class="product-modal__read-more d-none" id="modalReadMore" onclick="ProductModal.toggleDescription()">Read more</span>
+                        <div class="product-modal__allergens d-none" id="modalAllergens"></div>
+                    </div>
+                    
+                    <div class="product-modal__options" id="modalOptionsContainer">
+                        {* Variations and options rendered here by JS *}
+                    </div>
+                    
+                    <div class="product-modal__footer">
+                        <div class="quantity-selector">
+                            <button type="button" class="quantity-selector__btn" onclick="ProductModal.decrementQty()" id="modalQtyMinus">
+                                <i class="bi bi-dash"></i>
+                            </button>
+                            <input type="text" class="quantity-selector__value" value="1" readonly id="modalQtyValue">
+                            <button type="button" class="quantity-selector__btn" onclick="ProductModal.incrementQty()" id="modalQtyPlus">
+                                <i class="bi bi-plus"></i>
+                            </button>
+                        </div>
+                        <button type="button" class="btn btn-success product-modal__add-btn" onclick="ProductModal.addToCart()" id="modalAddBtn">
+                            <span class="product-modal__add-btn-text">Add to Cart</span>
+                            <span class="product-modal__add-btn-divider"></span>
+                            <span class="product-modal__add-btn-price" id="modalTotalPrice">£0.00</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{/block}
+
+{block scripts}
+{var $siteFeatures = ['offers' => !empty($site['features']['offers'])]}
+<script>
+    // Table mode flags
+    window.TABLE_METHODS = {$table_methods|json|noescape};
+    window.BASE_PATH = {$base_path};
+    
+    // Data for JS
+    window.autoPromos = {$auto_promos|json|noescape};
+    window.SITE_FEATURES = {$siteFeatures|json|noescape};
+    window.ACTIVE_OFFERS = {$active_offers|json|noescape};
+    window.UPSELLS_CONFIG = {$upsells|json|noescape};
+    window.ALLERGENS = {$allergens_config|json|noescape};
+</script>
+<script src="{$base_path}/assets/js/product-modal.js"></script>
+<script src="{$base_path}/assets/js/table.js"></script>
+<script src="{$base_path}/assets/js/promo.js"></script>
+<script src="{$base_path}/assets/js/offers.js"></script>
+<script src="{$base_path}/assets/js/upsells.js"></script>
+<script>
+// Category navigation scrollspy
+document.addEventListener('DOMContentLoaded', function() {
+    const categoriesNav = document.getElementById('categoriesNav');
+    const categoriesWrapper = document.getElementById('categoriesWrapper');
+    const navLinks = categoriesNav.querySelectorAll('.nav-link');
+    const sections = document.querySelectorAll('.menu-category-section');
+    let isClickScrolling = false;
+    
+    // Smooth scroll to category on click
+    navLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            isClickScrolling = true;
+            
+            const targetId = this.getAttribute('href').substring(1);
+            const target = document.getElementById(targetId);
+            
+            if (target) {
+                navLinks.forEach(l => l.classList.remove('active'));
+                this.classList.add('active');
+                
+                const headerOffset = 140;
+                const elementPosition = target.getBoundingClientRect().top;
+                const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
+                
+                window.scrollTo({
+                    top: offsetPosition,
+                    behavior: 'smooth'
+                });
+                
+                setTimeout(() => { isClickScrolling = false; }, 1000);
+                setTimeout(() => {
+                    const header = target.querySelector('.menu-category-header');
+                    if (header) {
+                        header.classList.remove('sparkle');
+                        void header.offsetWidth;
+                        header.classList.add('sparkle');
+                    }
+                }, 400);
+            }
+        });
+    });
+    
+    // IntersectionObserver for smooth active state updates
+    const observerOptions = {
+        root: null,
+        rootMargin: '-140px 0px -60% 0px',
+        threshold: 0
+    };
+    
+    const observer = new IntersectionObserver((entries) => {
+        if (isClickScrolling) return;
+        
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                const categoryId = entry.target.id;
+                
+                navLinks.forEach(link => {
+                    if (link.getAttribute('href') === `#${ categoryId}`) {
+                        link.classList.add('active');
+                        const navRect = categoriesNav.getBoundingClientRect();
+                        const linkRect = link.getBoundingClientRect();
+                        const scrollLeft = categoriesNav.scrollLeft + (linkRect.left - navRect.left) - (navRect.width / 2) + (linkRect.width / 2);
+                        categoriesNav.scrollTo({ left: scrollLeft, behavior: 'smooth' });
+                    } else {
+                        link.classList.remove('active');
+                    }
+                });
+            }
+        });
+    }, observerOptions);
+    
+    sections.forEach(section => observer.observe(section));
+    
+    // Scroll indicators
+    function updateScrollIndicators() {
+        if (!categoriesNav || !categoriesWrapper) return;
+        const canScrollLeft = categoriesNav.scrollLeft > 10;
+        const canScrollRight = categoriesNav.scrollLeft < (categoriesNav.scrollWidth - categoriesNav.clientWidth - 10);
+        categoriesWrapper.classList.toggle('can-scroll-left', canScrollLeft);
+        categoriesWrapper.classList.toggle('can-scroll-right', canScrollRight);
+    }
+    
+    categoriesNav.addEventListener('scroll', updateScrollIndicators);
+    window.addEventListener('resize', updateScrollIndicators);
+    updateScrollIndicators();
+
+    document.getElementById('categoriesScrollLeft')?.addEventListener('click', () => {
+        categoriesNav.scrollBy({ left: -150, behavior: 'smooth' });
+    });
+    
+    document.getElementById('categoriesScrollRight')?.addEventListener('click', () => {
+        categoriesNav.scrollBy({ left: 150, behavior: 'smooth' });
+    });
+
+    // Initialize upsells
+    if (typeof UpsellsManager !== 'undefined' && window.UPSELLS_CONFIG) {
+        UpsellsManager.init(window.UPSELLS_CONFIG);
+    }
+    
+    // Mobile cart bar visibility
+    function updateMobileCartBar() {
+        const cartData = Cart.get();
+        const mobileCartBar = document.getElementById('mobileCartBar');
+        if (!mobileCartBar) return;
+        mobileCartBar.style.display = cartData.length > 0 ? 'block' : 'none';
+    }
+    
+    updateMobileCartBar();
+    document.addEventListener('cartUpdated', updateMobileCartBar);
+    
+    const originalUpdateUI = Cart.updateUI;
+    Cart.updateUI = function() {
+        originalUpdateUI.call(this);
+        updateMobileCartBar();
+        document.dispatchEvent(new CustomEvent('cartUpdated'));
+    };
+});
+</script>
+{/block}
