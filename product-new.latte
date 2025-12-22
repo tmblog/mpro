@@ -1,0 +1,1292 @@
+{layout 'layout.latte'}
+
+{block title}Add Product - {$shop['name']} - Hub{/block}
+
+{block head}
+<style>
+    .variation-row {
+        background: #f8f9fa;
+        padding: 0.75rem;
+        border-radius: 4px;
+        margin-bottom: 0.5rem;
+    }
+    .option-group-card {
+        border: 1px solid #e6e7e9;
+        border-radius: 4px;
+        padding: 1rem;
+        margin-bottom: 0.5rem;
+        background: #f8f9fa;
+    }
+    .option-group-card .card-title {
+        font-size: 0.9rem;
+        font-weight: 600;
+    }
+    .option-group-card .drag-handle {
+        cursor: grab;
+        opacity: 0.5;
+        transition: opacity 0.2s;
+    }
+    .option-group-card:hover .drag-handle {
+        opacity: 1;
+    }
+    .option-group-card.sortable-ghost {
+        opacity: 0.4;
+        background: #e6f0ff;
+    }
+    .option-group-card.sortable-chosen {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+    .option-group-card.is-child {
+        margin-left: 1.5rem;
+        border-left: 3px solid #206bc4;
+    }
+    .option-group-card.is-child .drag-handle {
+        opacity: 0.3;
+        cursor: not-allowed;
+    }
+    .allergen-btn {
+        margin: 0.25rem;
+    }
+    .allergen-btn.active {
+        background-color: #206bc4;
+        color: white;
+    }
+    .pricing-section {
+        display: none;
+    }
+    .pricing-section.active {
+        display: block;
+    }
+    #options-card.disabled {
+        opacity: 0.5;
+        pointer-events: none;
+    }
+    #options-card.disabled .card-header {
+        pointer-events: auto;
+    }
+</style>
+{/block}
+
+{block shop_options}
+    <option value="{$shop['shop_id']}" selected>{$shop['name']}</option>
+{/block}
+
+{block content}
+<!-- Page Header -->
+<div class="page-header d-print-none mb-4">
+    <div class="row g-2 align-items-center">
+        <div class="col">
+            <a href="{$app_base}/products" class="text-muted small mb-1 d-block">
+                <i class="ti ti-arrow-left me-1"></i> Back to Products
+            </a>
+            <h2 class="page-title">Add Product</h2>
+            <div class="text-muted mt-1">
+                <span class="badge bg-blue-lt">{$shop['name']}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<form id="productForm" class="row">
+    <div class="col-lg-8">
+        <!-- Basic Info -->
+        <div class="card mb-3">
+            <div class="card-header">
+                <h3 class="card-title">Basic Info</h3>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label required">Category</label>
+                        <select class="form-select" name="category" required>
+                            <option value="">Select category...</option>
+                            {foreach $categories as $cat}
+                            <option value="{$cat}">{$cat}</option>
+                            {/foreach}
+                        </select>
+                        <small class="form-hint">
+                            <a href="{$app_base}/categories" class="text-muted">Manage categories</a>
+                        </small>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label required">Product Name</label>
+                        <input type="text" class="form-control" name="name" 
+                               placeholder="e.g. Margherita Pizza" required>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Description</label>
+                    <textarea class="form-control" name="dsc" rows="2" 
+                              placeholder="Brief description of the product"></textarea>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Pricing -->
+        <div class="card mb-3">
+            <div class="card-header">
+                <h3 class="card-title">Pricing</h3>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <div class="form-selectgroup">
+                        <label class="form-selectgroup-item">
+                            <input type="radio" name="pricing_type" value="single" 
+                                   class="form-selectgroup-input" checked 
+                                   onchange="togglePricingType('single')">
+                            <span class="form-selectgroup-label">
+                                <i class="ti ti-coin me-1"></i> Single price
+                                <small class="d-block text-muted">e.g. Garlic Bread £4.95</small>
+                            </span>
+                        </label>
+                        <label class="form-selectgroup-item">
+                            <input type="radio" name="pricing_type" value="variations" 
+                                   class="form-selectgroup-input"
+                                   onchange="togglePricingType('variations')">
+                            <span class="form-selectgroup-label">
+                                <i class="ti ti-list me-1"></i> Multiple sizes/types
+                                <small class="d-block text-muted">e.g. Small £7.95, Large £12.95</small>
+                            </span>
+                        </label>
+                    </div>
+                </div>
+                
+                <!-- Single Price -->
+                <div id="pricing-single" class="pricing-section active">
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label required">Price</label>
+                            <div class="input-group">
+                                <span class="input-group-text">£</span>
+                                <input type="text" class="form-control" name="price" placeholder="0.00">
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Table Price</label>
+                            <div class="input-group">
+                                <span class="input-group-text">£</span>
+                                <input type="text" class="form-control" name="table_price" placeholder="Optional">
+                            </div>
+                            <small class="form-hint">Leave empty if same as regular price</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Variations -->
+                <div id="pricing-variations" class="pricing-section">
+                    <div id="variations-list">
+                        <!-- Variations will be added here -->
+                    </div>
+                    <div class="d-flex gap-2 mt-2">
+                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="addVariation()">
+                            <i class="ti ti-plus me-1"></i> Add Variation
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Options -->
+        <div class="card mb-3" id="options-card">
+            <div class="card-header">
+                <h3 class="card-title">Extras & Options</h3>
+                <div class="card-actions">
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="link-option-btn" onclick="showAddOptionModal()">
+                        <i class="ti ti-plus me-1"></i> Link Option Group
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="linked-options">
+                    <p class="text-muted small" id="no-options-msg">
+                        <i class="ti ti-info-circle me-1"></i>
+                        No option groups linked. Click "Link Option Group" to add extras like toppings or sides.
+                    </p>
+                </div>
+                <p class="text-muted small" id="options-disabled-msg" style="display: none;">
+                    <i class="ti ti-info-circle me-1"></i>
+                    For products with multiple sizes/types, configure options per variation instead.
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <!-- Settings -->
+        <div class="card mb-3">
+            <div class="card-header">
+                <h3 class="card-title">Settings</h3>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-check form-switch">
+                        <input type="checkbox" class="form-check-input" name="stock" value="1" checked>
+                        <span class="form-check-label">In Stock</span>
+                    </label>
+                </div>
+                <div class="mb-3">
+                    <label class="form-check form-switch">
+                        <input type="checkbox" class="form-check-input" name="cpn" value="1" checked>
+                        <span class="form-check-label">Discountable</span>
+                    </label>
+                </div>
+                <div class="mb-0">
+                    <label class="form-check form-switch">
+                        <input type="checkbox" class="form-check-input" name="featured" value="1">
+                        <span class="form-check-label">Featured</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Allergens -->
+        <div class="card mb-3">
+            <div class="card-header">
+                <h3 class="card-title">Allergens</h3>
+            </div>
+            <div class="card-body">
+                <div id="allergens-container" class="d-flex flex-wrap">
+                    {var $allergens = ['celery', 'gluten', 'crustaceans', 'eggs', 'fish', 'lupin', 'milk', 'molluscs', 'mustard', 'nuts', 'peanuts', 'sesame', 'soybeans', 'sulphites']}
+                    {foreach $allergens as $allergen}
+                    <button type="button" class="btn btn-sm btn-outline-secondary allergen-btn" 
+                            data-allergen="{$allergen}" onclick="toggleAllergen(this)">
+                        {$allergen|capitalize}
+                    </button>
+                    {/foreach}
+                </div>
+                <input type="hidden" name="allergens" id="allergens-input" value="[]">
+            </div>
+        </div>
+        
+        <!-- Actions -->
+        <div class="card">
+            <div class="card-body">
+                <button type="button" class="btn btn-primary w-100 mb-2" onclick="saveProduct()">
+                    <i class="ti ti-device-floppy me-1"></i> Save Product
+                </button>
+                <a href="{$app_base}/products" class="btn btn-outline-secondary w-100">
+                    Cancel
+                </a>
+            </div>
+            <div class="card-footer">
+                <button type="button" class="btn btn-ghost-secondary btn-sm w-100" disabled>
+                    <i class="ti ti-plus me-1"></i> Bulk Add Products (Coming Soon)
+                </button>
+            </div>
+        </div>
+    </div>
+</form>
+
+<!-- Add Option Group Modal -->
+<div class="modal modal-blur fade" id="optionModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Link Option Group</h5>
+                <button type="button" class="btn-close" onclick="closeOptionModal()"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Option Group</label>
+                    <select class="form-select" id="option-group-select">
+                        <option value="">Select a group...</option>
+                        {foreach $option_groups as $group}
+                        <option value="{$group['id']}" data-name="{$group['name']}">
+                            {$group['name']} ({count($group['options'])} options)
+                        </option>
+                        {/foreach}
+                    </select>
+                </div>
+                <div class="row">
+                    <div class="col-6 mb-3">
+                        <label class="form-label">Min Selections</label>
+                        <input type="number" class="form-control" id="option-min" value="0" min="0">
+                        <small class="form-hint">0 = optional</small>
+                    </div>
+                    <div class="col-6 mb-3">
+                        <label class="form-label">Max Selections</label>
+                        <input type="number" class="form-control" id="option-max" value="0" min="0">
+                        <small class="form-hint">0 = unlimited</small>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Price Adjustment</label>
+                    <div class="input-group">
+                        <span class="input-group-text">£</span>
+                        <input type="text" class="form-control" id="option-price-adj" value="0" placeholder="0.00">
+                    </div>
+                    <small class="form-hint">Added on top of each option's price</small>
+                </div>
+                <div class="mb-3">
+                    <label class="form-check form-switch">
+                        <input type="checkbox" class="form-check-input" id="option-visible" checked>
+                        <span class="form-check-label">Show immediately</span>
+                    </label>
+                    <small class="form-hint d-block">If unchecked, configure which option reveals this group</small>
+                </div>
+                <div class="mb-3" id="revealed-by-section" style="display: none;">
+                    <label class="form-label">Revealed by option</label>
+                    <select class="form-select" id="option-revealed-by">
+                        <option value="">Select triggering option...</option>
+                    </select>
+                    <small class="form-hint">This group shows only when selected option is chosen</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeOptionModal()">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="addOptionGroup()">
+                    <i class="ti ti-plus me-1"></i> Add Group
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Variation Options Modal -->
+<div class="modal modal-blur fade" id="variationOptionsModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Variation Options</h5>
+                <button type="button" class="btn-close" onclick="closeVariationOptionsModal()"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h4 class="mb-3">Linked Option Groups</h4>
+                        <div id="variation-options-list">
+                            <p class="text-muted small">No option groups linked.</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <h4 class="mb-3">Add Option Group</h4>
+                        <div class="mb-2">
+                            <select class="form-select form-select-sm" id="variation-option-group-select">
+                                <option value="">Select group...</option>
+                                {foreach $option_groups as $group}
+                                <option value="{$group['id']}">{$group['name']}</option>
+                                {/foreach}
+                            </select>
+                        </div>
+                        <div class="row g-2 mb-2">
+                            <div class="col-4">
+                                <label class="form-label small">Min</label>
+                                <input type="number" class="form-control form-control-sm" id="variation-option-min" value="0" min="0">
+                            </div>
+                            <div class="col-4">
+                                <label class="form-label small">Max</label>
+                                <input type="number" class="form-control form-control-sm" id="variation-option-max" value="0" min="0">
+                            </div>
+                            <div class="col-4">
+                                <label class="form-label small">+Price</label>
+                                <input type="text" class="form-control form-control-sm" id="variation-option-price-adj" value="0">
+                            </div>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-check form-switch">
+                                <input type="checkbox" class="form-check-input" id="variation-option-visible" checked>
+                                <span class="form-check-label small">Show immediately</span>
+                            </label>
+                        </div>
+                        <div class="mb-2" id="variation-revealed-by-section" style="display: none;">
+                            <label class="form-label small">Shown only if chosen:</label>
+                            <select class="form-select form-select-sm" id="variation-option-revealed-by">
+                                <option value="">Select triggering option...</option>
+                            </select>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-primary" onclick="addOptionToVariation()">
+                            <i class="ti ti-plus me-1"></i> Add
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer justify-content-between">
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="applyOptionsToAllVariations()">
+                    <i class="ti ti-copy me-1"></i> Apply to all variations
+                </button>
+                <button type="button" class="btn btn-primary" onclick="closeVariationOptionsModal()">Done</button>
+            </div>
+        </div>
+    </div>
+</div>
+{/block}
+
+{block scripts}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+<script>
+const SHOP_ID = {$shop['shop_id']};
+const CSRF_TOKEN = {$csrf_token};
+
+const optionGroups = {json_encode($option_groups)|noescape};
+
+let linkedOptions = [];
+let variations = [];
+let selectedAllergens = [];
+let optionModal = null;
+let currentVariationIndex = null;
+let variationOptionsSortable = null;
+let optionsSortable = null;
+
+// ============================================================================
+// INITIALIZATION
+// ============================================================================
+
+document.addEventListener('DOMContentLoaded', function() {
+    optionModal = new tabler.Modal(document.getElementById('optionModal'));
+    
+    document.getElementById('option-visible').addEventListener('change', updateRevealedByVisibility);
+    document.getElementById('variation-option-visible').addEventListener('change', updateVariationRevealedByVisibility);
+});
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+function buildDependencyMap(options) {
+    const childToParent = {};
+    
+    options.forEach(opt => {
+        if (opt.revealed_by && opt.revealed_by.length > 0) {
+            const revealerId = opt.revealed_by[0];
+            for (const lg of options) {
+                const group = optionGroups.find(g => g.id === lg.group_id);
+                if (group && group.options.find(o => o.id === revealerId)) {
+                    childToParent[opt.group_id] = lg.group_id;
+                    break;
+                }
+            }
+        }
+    });
+    
+    return childToParent;
+}
+
+function getDescendants(parentGroupId, childToParent) {
+    const descendants = [];
+    
+    for (const [childId, pId] of Object.entries(childToParent)) {
+        if (parseInt(pId) === parentGroupId) {
+            descendants.push(parseInt(childId));
+            descendants.push(...getDescendants(parseInt(childId), childToParent));
+        }
+    }
+    
+    return descendants;
+}
+
+function normalizeOptionOrder(options, childToParent) {
+    // Build parent -> children map
+    const parentToChildren = {};
+    for (const [childId, parentId] of Object.entries(childToParent)) {
+        if (!parentToChildren[parentId]) parentToChildren[parentId] = [];
+        parentToChildren[parentId].push(parseInt(childId));
+    }
+    
+    const result = [];
+    const processed = new Set();
+    
+    // Helper to add item and all its descendants
+    const addWithDescendants = (groupId) => {
+        if (processed.has(groupId)) return;
+        
+        const opt = options.find(o => o.group_id === groupId);
+        if (!opt) return;
+        
+        result.push(opt);
+        processed.add(groupId);
+        
+        // Recursively add children
+        const children = parentToChildren[groupId] || [];
+        children.forEach(childId => addWithDescendants(childId));
+    };
+    
+    // Process items in original order, but skip children (they get added with parent)
+    for (const opt of options) {
+        if (processed.has(opt.group_id)) continue;
+        if (childToParent[opt.group_id]) continue; // Skip children, added with parent
+        
+        addWithDescendants(opt.group_id);
+    }
+    
+    // Handle orphaned children (parent not in list - shouldn't happen but safety)
+    for (const opt of options) {
+        if (!processed.has(opt.group_id)) {
+            result.push(opt);
+            processed.add(opt.group_id);
+        }
+    }
+    
+    // Replace array contents
+    options.length = 0;
+    options.push(...result);
+}
+
+// ============================================================================
+// PRICING TYPE
+// ============================================================================
+
+function togglePricingType(type) {
+    document.getElementById('pricing-single').classList.toggle('active', type === 'single');
+    document.getElementById('pricing-variations').classList.toggle('active', type === 'variations');
+    
+    const optionsCard = document.getElementById('options-card');
+    optionsCard.classList.toggle('disabled', type === 'variations');
+    
+    document.getElementById('link-option-btn').disabled = (type === 'variations');
+    
+    document.getElementById('no-options-msg').style.display = type === 'single' ? 'block' : 'none';
+    document.getElementById('options-disabled-msg').style.display = type === 'variations' ? 'block' : 'none';
+    
+    if (type === 'variations' && variations.length === 0) {
+        addVariation();
+        addVariation();
+    }
+}
+
+// ============================================================================
+// ALLERGENS
+// ============================================================================
+
+function toggleAllergen(btn) {
+    const allergen = btn.dataset.allergen;
+    btn.classList.toggle('active');
+    
+    if (btn.classList.contains('active')) {
+        if (!selectedAllergens.includes(allergen)) {
+            selectedAllergens.push(allergen);
+        }
+    } else {
+        selectedAllergens = selectedAllergens.filter(a => a !== allergen);
+    }
+    
+    document.getElementById('allergens-input').value = JSON.stringify(selectedAllergens);
+}
+
+// ============================================================================
+// SIMPLE PRODUCT OPTIONS
+// ============================================================================
+
+function showAddOptionModal() {
+    document.getElementById('option-group-select').value = '';
+    document.getElementById('option-min').value = '0';
+    document.getElementById('option-max').value = '0';
+    document.getElementById('option-price-adj').value = '0';
+    document.getElementById('option-visible').checked = true;
+    document.getElementById('revealed-by-section').style.display = 'none';
+    document.getElementById('option-revealed-by').innerHTML = '<option value="">Select triggering option...</option>';
+    
+    optionModal.show();
+}
+
+function closeOptionModal() {
+    optionModal.hide();
+}
+
+function updateRevealedByVisibility() {
+    const isVisible = document.getElementById('option-visible').checked;
+    const section = document.getElementById('revealed-by-section');
+    
+    if (isVisible) {
+        section.style.display = 'none';
+    } else {
+        section.style.display = 'block';
+        populateRevealedByOptions();
+    }
+}
+
+function populateRevealedByOptions() {
+    const select = document.getElementById('option-revealed-by');
+    select.innerHTML = '<option value="">Select triggering option...</option>';
+    
+    linkedOptions.forEach(linked => {
+        if (linked.max > 1) return;
+        
+        const group = optionGroups.find(g => g.id === linked.group_id);
+        if (group) {
+            group.options.forEach(opt => {
+                const option = document.createElement('option');
+                option.value = opt.id;
+                option.textContent = group.name + ': ' + opt.name;
+                select.appendChild(option);
+            });
+        }
+    });
+}
+
+function addOptionGroup() {
+    const select = document.getElementById('option-group-select');
+    const groupId = parseInt(select.value);
+    
+    if (!groupId) {
+        Swal.fire({ icon: 'warning', title: 'Please select an option group' });
+        return;
+    }
+    
+    if (linkedOptions.find(o => o.group_id === groupId)) {
+        Swal.fire({ icon: 'warning', title: 'Group already added' });
+        return;
+    }
+    
+    const group = optionGroups.find(g => g.id === groupId);
+    const isVisible = document.getElementById('option-visible').checked;
+    const revealedBySelect = document.getElementById('option-revealed-by');
+    const revealedBy = revealedBySelect.value;
+    const revealedByName = revealedBySelect.options[revealedBySelect.selectedIndex]?.text || '';
+    
+    linkedOptions.push({
+        group_id: groupId,
+        group_name: group.name,
+        min: parseInt(document.getElementById('option-min').value) || 0,
+        max: parseInt(document.getElementById('option-max').value) || 0,
+        price_adjustment: parseFloat(document.getElementById('option-price-adj').value) || 0,
+        initially_visible: isVisible,
+        revealed_by: isVisible ? [] : (revealedBy ? [parseInt(revealedBy)] : []),
+        revealed_by_name: isVisible ? '' : revealedByName
+    });
+    
+    renderLinkedOptions();
+    closeOptionModal();
+}
+
+function removeOptionGroup(groupId) {
+    const group = optionGroups.find(g => g.id === groupId);
+    if (group) {
+        const dependents = linkedOptions.filter(o => {
+            if (!o.revealed_by || o.revealed_by.length === 0) return false;
+            return group.options.some(opt => o.revealed_by.includes(opt.id));
+        });
+        
+        if (dependents.length > 0) {
+            const names = dependents.map(d => d.group_name).join(', ');
+            Swal.fire({
+                icon: 'warning',
+                title: 'Cannot remove',
+                text: 'Other groups depend on this: ' + names
+            });
+            return;
+        }
+    }
+    
+    linkedOptions = linkedOptions.filter(o => o.group_id !== groupId);
+    renderLinkedOptions();
+}
+
+function renderLinkedOptions() {
+    const container = document.getElementById('linked-options');
+    const noMsg = document.getElementById('no-options-msg');
+    
+    destroyOptionsSortable();
+    
+    if (linkedOptions.length === 0) {
+        noMsg.style.display = 'block';
+        container.querySelectorAll('.option-group-card').forEach(el => el.remove());
+        return;
+    }
+    
+    noMsg.style.display = 'none';
+    container.querySelectorAll('.option-group-card').forEach(el => el.remove());
+    
+    const childToParent = buildDependencyMap(linkedOptions);
+    normalizeOptionOrder(linkedOptions, childToParent);
+    
+    linkedOptions.forEach((linked) => {
+        const required = linked.min > 0 ? 'Required' : 'Optional';
+        const maxText = linked.max === 0 ? 'unlimited' : linked.max;
+        
+        const isChild = !!childToParent[linked.group_id];
+        const childClass = isChild ? 'is-child' : '';
+        
+        const html = `
+            <div class="option-group-card ${ childClass }" data-group-id="${ linked.group_id }">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div class="d-flex align-items-start gap-2">
+                        <div class="drag-handle pt-1" title="${ isChild ? 'Moves with parent' : 'Drag to reorder' }">
+                            <i class="ti ti-grip-vertical"></i>
+                        </div>
+                        <div>
+                            <div class="card-title mb-1">${ linked.group_name }</div>
+                            <div class="text-muted small">
+                                ${ required } · Min: ${ linked.min } · Max: ${ maxText }
+                                ${ linked.price_adjustment > 0 ? ' · +£' + linked.price_adjustment.toFixed(2) : '' }
+                                ${ !linked.initially_visible && linked.revealed_by_name ? ' · Shown if "' + linked.revealed_by_name + '" chosen' : '' }
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-ghost-danger" onclick="removeOptionGroup(${ linked.group_id })">
+                        <i class="ti ti-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+        container.insertAdjacentHTML('beforeend', html);
+    });
+    
+    initOptionsSortable();
+}
+
+function initOptionsSortable() {
+    const container = document.getElementById('linked-options');
+    if (!container || linkedOptions.length < 2) return;
+    
+    const childToParent = buildDependencyMap(linkedOptions);
+    
+    optionsSortable = new Sortable(container, {
+        animation: 150,
+        handle: '.drag-handle',
+        ghostClass: 'sortable-ghost',
+        chosenClass: 'sortable-chosen',
+        filter: '.is-child',
+        
+        onStart: function(evt) {
+            const groupId = parseInt(evt.item.dataset.groupId);
+            const descendants = getDescendants(groupId, childToParent);
+            
+            descendants.forEach(descId => {
+                const el = container.querySelector('[data-group-id="' + descId + '"]');
+                if (el) el.style.opacity = '0.5';
+            });
+        },
+        
+        onEnd: function(evt) {
+            container.querySelectorAll('.option-group-card').forEach(el => {
+                el.style.opacity = '';
+            });
+            
+            if (evt.oldIndex === evt.newIndex) return;
+            
+            const movedGroupId = parseInt(evt.item.dataset.groupId);
+            const movedGroup = linkedOptions.find(o => o.group_id === movedGroupId);
+            
+            if (!movedGroup) return;
+            
+            const descendants = getDescendants(movedGroupId, childToParent);
+            
+            const toMove = [movedGroup];
+            descendants.forEach(descId => {
+                const desc = linkedOptions.find(o => o.group_id === descId);
+                if (desc) toMove.push(desc);
+            });
+            
+            linkedOptions = linkedOptions.filter(o => 
+                o.group_id !== movedGroupId && !descendants.includes(o.group_id)
+            );
+            
+            const cards = [...container.querySelectorAll('.option-group-card')];
+            const newDomIndex = cards.findIndex(el => parseInt(el.dataset.groupId) === movedGroupId);
+            
+            let insertIndex = 0;
+            for (let i = 0; i < newDomIndex; i++) {
+                const cardGroupId = parseInt(cards[i].dataset.groupId);
+                if (linkedOptions.find(o => o.group_id === cardGroupId)) {
+                    insertIndex++;
+                }
+            }
+            
+            linkedOptions.splice(insertIndex, 0, ...toMove);
+            
+            renderLinkedOptions();
+        }
+    });
+}
+
+function destroyOptionsSortable() {
+    if (optionsSortable) {
+        optionsSortable.destroy();
+        optionsSortable = null;
+    }
+}
+
+// ============================================================================
+// VARIATIONS
+// ============================================================================
+
+function addVariation() {
+    variations.push({ name: '', price: '', options: [] });
+    renderVariations();
+}
+
+function updateVariation(index, field, value) {
+    variations[index][field] = value;
+}
+
+function removeVariation(index) {
+    variations.splice(index, 1);
+    renderVariations();
+}
+
+function renderVariations() {
+    const list = document.getElementById('variations-list');
+    list.innerHTML = '';
+    
+    variations.forEach((v, i) => {
+        const optionsSummary = v.options.length > 0 
+            ? '<span class="badge bg-blue-lt">' + v.options.length + ' option group(s)</span>'
+            : '<span class="text-muted small">No options</span>';
+        
+        const html = `
+            <div class="variation-row" data-index="${ i }">
+                <div class="row g-2 align-items-center mb-2">
+                    <div class="col">
+                        <input type="text" class="form-control form-control-sm" 
+                               placeholder="e.g. Small, Medium, Large" value="${ v.name || '' }"
+                               onchange="updateVariation(${ i }, 'name', this.value)">
+                    </div>
+                    <div class="col-auto" style="width: 120px;">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text">£</span>
+                            <input type="text" class="form-control" placeholder="0.00" value="${ v.price || '' }"
+                                   onchange="updateVariation(${ i }, 'price', this.value)">
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <button type="button" class="btn btn-sm btn-ghost-danger" onclick="removeVariation(${ i })">
+                            <i class="ti ti-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="d-flex align-items-center gap-2 ps-2">
+                    <small class="text-muted">Options:</small>
+                    ${ optionsSummary }
+                    <button type="button" class="btn btn-sm btn-ghost-primary" onclick="showVariationOptionsModal(${ i })">
+                        <i class="ti ti-settings me-1"></i> Configure
+                    </button>
+                </div>
+            </div>
+        `;
+        list.insertAdjacentHTML('beforeend', html);
+    });
+}
+
+function showVariationOptionsModal(index) {
+    currentVariationIndex = index;
+    
+    renderVariationOptionsInModal(variations[index].options);
+    resetVariationOptionForm();
+    
+    const modal = new tabler.Modal(document.getElementById('variationOptionsModal'));
+    modal.show();
+}
+
+function closeVariationOptionsModal() {
+    tabler.Modal.getInstance(document.getElementById('variationOptionsModal')).hide();
+    currentVariationIndex = null;
+}
+
+function renderVariationOptionsInModal(options) {
+    const container = document.getElementById('variation-options-list');
+    
+    destroyVariationOptionsSortable();
+    
+    if (options.length === 0) {
+        container.innerHTML = '<p class="text-muted small">No option groups linked to this variation.</p>';
+        return;
+    }
+    
+    const childToParent = buildDependencyMap(options);
+    normalizeOptionOrder(options, childToParent);
+    
+    container.innerHTML = options.map((opt) => {
+        const maxText = opt.max === 0 ? 'unlimited' : opt.max;
+        const revealedText = !opt.initially_visible && opt.revealed_by_name 
+            ? ' · Shown if "' + opt.revealed_by_name + '" chosen' 
+            : '';
+        
+        const isChild = !!childToParent[opt.group_id];
+        const childClass = isChild ? 'is-child' : '';
+        
+        return `
+            <div class="option-group-card ${ childClass }" data-group-id="${ opt.group_id }">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div class="d-flex align-items-start gap-2">
+                        <div class="drag-handle pt-1" title="${ isChild ? 'Moves with parent' : 'Drag to reorder' }">
+                            <i class="ti ti-grip-vertical"></i>
+                        </div>
+                        <div>
+                            <div class="card-title mb-1">${ opt.group_name }</div>
+                            <div class="text-muted small">
+                                Min: ${ opt.min } · Max: ${ maxText }
+                                ${ opt.price_adjustment > 0 ? ' · +£' + opt.price_adjustment.toFixed(2) : '' }
+                                ${ revealedText }
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-ghost-danger" onclick="removeVariationOption(${ opt.group_id })">
+                        <i class="ti ti-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    initVariationOptionsSortable();
+}
+
+function initVariationOptionsSortable() {
+    const container = document.getElementById('variation-options-list');
+    const variation = variations[currentVariationIndex];
+    if (!container || !variation || variation.options.length < 2) return;
+    
+    const childToParent = buildDependencyMap(variation.options);
+    
+    variationOptionsSortable = new Sortable(container, {
+        animation: 150,
+        handle: '.drag-handle',
+        ghostClass: 'sortable-ghost',
+        chosenClass: 'sortable-chosen',
+        filter: '.is-child',
+        
+        onStart: function(evt) {
+            const groupId = parseInt(evt.item.dataset.groupId);
+            const descendants = getDescendants(groupId, childToParent);
+            
+            descendants.forEach(descId => {
+                const el = container.querySelector('[data-group-id="' + descId + '"]');
+                if (el) el.style.opacity = '0.5';
+            });
+        },
+        
+        onEnd: function(evt) {
+            container.querySelectorAll('.option-group-card').forEach(el => {
+                el.style.opacity = '';
+            });
+            
+            if (evt.oldIndex === evt.newIndex) return;
+            
+            const variation = variations[currentVariationIndex];
+            const movedGroupId = parseInt(evt.item.dataset.groupId);
+            const movedGroup = variation.options.find(o => o.group_id === movedGroupId);
+            
+            if (!movedGroup) return;
+            
+            const descendants = getDescendants(movedGroupId, childToParent);
+            
+            const toMove = [movedGroup];
+            descendants.forEach(descId => {
+                const desc = variation.options.find(o => o.group_id === descId);
+                if (desc) toMove.push(desc);
+            });
+            
+            variation.options = variation.options.filter(o => 
+                o.group_id !== movedGroupId && !descendants.includes(o.group_id)
+            );
+            
+            const cards = [...container.querySelectorAll('.option-group-card')];
+            const newDomIndex = cards.findIndex(el => parseInt(el.dataset.groupId) === movedGroupId);
+            
+            let insertIndex = 0;
+            for (let i = 0; i < newDomIndex; i++) {
+                const cardGroupId = parseInt(cards[i].dataset.groupId);
+                if (variation.options.find(o => o.group_id === cardGroupId)) {
+                    insertIndex++;
+                }
+            }
+            
+            variation.options.splice(insertIndex, 0, ...toMove);
+            
+            renderVariationOptionsInModal(variation.options);
+            renderVariations();
+        }
+    });
+}
+
+function destroyVariationOptionsSortable() {
+    if (variationOptionsSortable) {
+        variationOptionsSortable.destroy();
+        variationOptionsSortable = null;
+    }
+}
+
+function removeVariationOption(groupId) {
+    const variation = variations[currentVariationIndex];
+    
+    const group = optionGroups.find(g => g.id === groupId);
+    if (group) {
+        const dependents = variation.options.filter(o => {
+            if (!o.revealed_by || o.revealed_by.length === 0) return false;
+            return group.options.some(opt => o.revealed_by.includes(opt.id));
+        });
+        
+        if (dependents.length > 0) {
+            const names = dependents.map(d => d.group_name).join(', ');
+            Swal.fire({
+                icon: 'warning',
+                title: 'Cannot remove',
+                text: 'Other groups depend on this: ' + names
+            });
+            return;
+        }
+    }
+    
+    variation.options = variation.options.filter(o => o.group_id !== groupId);
+    renderVariationOptionsInModal(variation.options);
+    renderVariations();
+}
+
+function resetVariationOptionForm() {
+    document.getElementById('variation-option-group-select').value = '';
+    document.getElementById('variation-option-min').value = '0';
+    document.getElementById('variation-option-max').value = '0';
+    document.getElementById('variation-option-price-adj').value = '0';
+    document.getElementById('variation-option-visible').checked = true;
+    document.getElementById('variation-revealed-by-section').style.display = 'none';
+}
+
+function updateVariationRevealedByVisibility() {
+    const isVisible = document.getElementById('variation-option-visible').checked;
+    const section = document.getElementById('variation-revealed-by-section');
+    
+    if (isVisible) {
+        section.style.display = 'none';
+    } else {
+        section.style.display = 'block';
+        populateVariationRevealedByOptions();
+    }
+}
+
+function populateVariationRevealedByOptions() {
+    const select = document.getElementById('variation-option-revealed-by');
+    select.innerHTML = '<option value="">Select triggering option...</option>';
+    
+    const variation = variations[currentVariationIndex];
+    if (!variation) return;
+    
+    variation.options.forEach(linked => {
+        if (linked.max > 1) return;
+        
+        const group = optionGroups.find(g => g.id === linked.group_id);
+        if (group) {
+            group.options.forEach(opt => {
+                const option = document.createElement('option');
+                option.value = opt.id;
+                option.textContent = group.name + ': ' + opt.name;
+                select.appendChild(option);
+            });
+        }
+    });
+}
+
+function addOptionToVariation() {
+    const select = document.getElementById('variation-option-group-select');
+    const groupId = parseInt(select.value);
+    
+    if (!groupId) {
+        Swal.fire({ icon: 'warning', title: 'Please select an option group' });
+        return;
+    }
+    
+    const variation = variations[currentVariationIndex];
+    
+    if (variation.options.find(o => o.group_id === groupId)) {
+        Swal.fire({ icon: 'warning', title: 'Group already added to this variation' });
+        return;
+    }
+    
+    const group = optionGroups.find(g => g.id === groupId);
+    const isVisible = document.getElementById('variation-option-visible').checked;
+    const revealedBySelect = document.getElementById('variation-option-revealed-by');
+    const revealedBy = revealedBySelect.value;
+    const revealedByName = revealedBySelect.options[revealedBySelect.selectedIndex]?.text || '';
+    
+    variation.options.push({
+        group_id: groupId,
+        group_name: group.name,
+        min: parseInt(document.getElementById('variation-option-min').value) || 0,
+        max: parseInt(document.getElementById('variation-option-max').value) || 0,
+        price_adjustment: parseFloat(document.getElementById('variation-option-price-adj').value) || 0,
+        initially_visible: isVisible,
+        revealed_by: isVisible ? [] : (revealedBy ? [parseInt(revealedBy)] : []),
+        revealed_by_name: isVisible ? '' : revealedByName
+    });
+    
+    renderVariationOptionsInModal(variation.options);
+    renderVariations();
+    resetVariationOptionForm();
+}
+
+function applyOptionsToAllVariations() {
+    if (variations.length < 2) return;
+    
+    const sourceOptions = variations[currentVariationIndex].options;
+    
+    Swal.fire({
+        title: 'Apply to all variations?',
+        text: 'This will copy ' + sourceOptions.length + ' option group(s) to all other variations.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#206bc4',
+        confirmButtonText: 'Yes, apply to all'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            variations.forEach((v, i) => {
+                if (i !== currentVariationIndex) {
+                    v.options = JSON.parse(JSON.stringify(sourceOptions));
+                }
+            });
+            renderVariations();
+            Swal.fire({ icon: 'success', title: 'Applied to all variations', timer: 1500, showConfirmButton: false });
+        }
+    });
+}
+
+// ============================================================================
+// SAVE PRODUCT
+// ============================================================================
+
+async function saveProduct() {
+    const form = document.getElementById('productForm');
+    const pricingType = form.querySelector('input[name="pricing_type"]:checked').value;
+    
+    const category = form.querySelector('select[name="category"]').value.trim();
+    const name = form.querySelector('input[name="name"]').value.trim();
+    const dsc = form.querySelector('textarea[name="dsc"]').value.trim();
+    
+    if (!category) {
+        Swal.fire({ icon: 'warning', title: 'Category is required' });
+        return;
+    }
+    if (!name) {
+        Swal.fire({ icon: 'warning', title: 'Product name is required' });
+        return;
+    }
+    
+    if (pricingType === 'single') {
+        const price = form.querySelector('input[name="price"]').value.trim();
+        if (!price) {
+            Swal.fire({ icon: 'warning', title: 'Price is required' });
+            return;
+        }
+        
+        const product = {
+            name: name,
+            dsc: dsc,
+            price: price,
+            stock: form.querySelector('input[name="stock"]').checked ? 1 : 0,
+            cpn: form.querySelector('input[name="cpn"]').checked ? 1 : 0,
+            featured: form.querySelector('input[name="featured"]').checked
+        };
+        
+        const tablePrice = form.querySelector('input[name="table_price"]').value.trim();
+        if (tablePrice) {
+            product.table_price = parseFloat(tablePrice);
+        }
+        
+        if (selectedAllergens.length > 0) {
+            product.allergens = selectedAllergens;
+        }
+        
+        if (linkedOptions.length > 0) {
+            product.options = linkedOptions.map(o => ({
+                group_id: o.group_id,
+                min: o.min,
+                max: o.max,
+                price_adjustment: o.price_adjustment,
+                initially_visible: o.initially_visible,
+                ...(o.revealed_by && o.revealed_by.length > 0 ? { revealed_by: o.revealed_by } : {})
+            }));
+        }
+        
+        await createSimpleProduct(category, product);
+        
+    } else {
+        const validVariations = variations.filter(v => v.name && v.price);
+        if (validVariations.length < 2) {
+            Swal.fire({ icon: 'warning', title: 'Add at least 2 variations' });
+            return;
+        }
+        
+        await createVariationProduct(category, name, dsc, validVariations);
+    }
+}
+
+async function createSimpleProduct(category, product) {
+    try {
+        Swal.fire({
+            title: 'Creating product...',
+            allowOutsideClick: false,
+            didOpen: () => Swal.showLoading()
+        });
+        
+        const response = await fetch(APP_BASE + '/api/products', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                shop_id: SHOP_ID,
+                category: category,
+                product: product
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            await Swal.fire({
+                icon: 'success',
+                title: 'Product created!',
+                timer: 1500,
+                showConfirmButton: false
+            });
+            window.location.reload();
+        } else {
+            throw new Error(result.error || 'Failed to create product');
+        }
+    } catch (error) {
+        Swal.fire({ icon: 'error', title: 'Error', text: error.message });
+    }
+}
+
+async function createVariationProduct(category, name, dsc, variationsList) {
+    try {
+        Swal.fire({
+            title: 'Creating product...',
+            allowOutsideClick: false,
+            didOpen: () => Swal.showLoading()
+        });
+        
+        const response = await fetch(APP_BASE + '/api/products', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                shop_id: SHOP_ID,
+                category: category,
+                product: {
+                    name: name,
+                    dsc: dsc,
+                    vari: variationsList.map(v => ({
+                        name: v.name,
+                        price: v.price,
+                        ...(v.options && v.options.length > 0 ? {
+                            options: v.options.map(o => ({
+                                group_id: o.group_id,
+                                min: o.min,
+                                max: o.max,
+                                price_adjustment: o.price_adjustment,
+                                initially_visible: o.initially_visible,
+                                ...(o.revealed_by && o.revealed_by.length > 0 ? { revealed_by: o.revealed_by } : {})
+                            }))
+                        } : {})
+                    }))
+                }
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            await Swal.fire({
+                icon: 'success',
+                title: 'Product created!',
+                text: 'Created with ' + variationsList.length + ' variations',
+                timer: 1500,
+                showConfirmButton: false
+            });
+            window.location.reload();
+        } else {
+            throw new Error(result.error || 'Failed to create product');
+        }
+    } catch (error) {
+        Swal.fire({ icon: 'error', title: 'Error', text: error.message });
+    }
+}
+</script>
+{/block}
