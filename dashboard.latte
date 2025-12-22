@@ -1,0 +1,129 @@
+{layout 'layout.latte'}
+
+{block title}Dashboard - Hub{/block}
+
+{block shop_options}
+    {foreach $shops as $shop}
+    <option value="{$shop['shop_id']}" {if $selected_shop && $selected_shop['shop_id'] === $shop['shop_id']}selected{/if}>
+        {$shop['name']}
+    </option>
+    {/foreach}
+{/block}
+
+{block content}
+<!-- Page Header -->
+<div class="page-header d-print-none">
+    <div class="container-xl">
+        <div class="row g-2 align-items-center">
+            <div class="col">
+                <h2 class="page-title">Dashboard</h2>
+                <div class="text-muted mt-1">Welcome back, {$user['username'] ?? $user['email']}</div>
+            </div>
+            {if $is_global_admin}
+            <div class="col-auto ms-auto">
+                <a href="{$app_base}/shops/new" class="btn btn-primary">
+                    <i class="ti ti-plus me-2"></i> Add Shop
+                </a>
+            </div>
+            {/if}
+        </div>
+    </div>
+</div>
+
+{if empty($shops)}
+<div class="container-xl">
+    <div class="card">
+        <div class="card-body">
+            <div class="empty">
+                <div class="empty-icon">
+                    <i class="ti ti-building-store" style="font-size: 3rem;"></i>
+                </div>
+                <p class="empty-title">No shops available</p>
+                <p class="empty-subtitle text-muted">
+                    Get started by adding your first shop.
+                </p>
+                {if $is_global_admin}
+                <div class="empty-action">
+                    <a href="{$app_base}/shops/new" class="btn btn-primary">
+                        <i class="ti ti-plus me-2"></i> Add First Shop
+                    </a>
+                </div>
+                {/if}
+            </div>
+        </div>
+    </div>
+</div>
+{else}
+
+<div class="container-xl">
+    <div class="row row-deck row-cards">
+        {foreach $summaries as $shop_id => $summary}
+        <div class="col-sm-6 col-lg-4">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">{$summary['shop']['name']}</h3>
+                    <div class="card-actions">
+                        <button onclick="selectShop({$shop_id})" class="btn btn-primary btn-sm">
+                            Select
+                        </button>
+                    </div>
+                </div>
+                
+                {if $summary['success'] && $summary['data']}
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-4">
+                            <div class="text-center">
+                                <div class="h1 mb-0">{$summary['data']['orders_today'] ?? 0}</div>
+                                <div class="text-muted small">Orders</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="text-center">
+                                <div class="h1 mb-0">£{number_format($summary['data']['revenue_today'] ?? 0, 0)}</div>
+                                <div class="text-muted small">Revenue</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="text-center">
+                                <div class="h1 mb-0 {if ($summary['data']['pending_orders'] ?? 0) > 0}text-warning{/if}">
+                                    {$summary['data']['pending_orders'] ?? 0}
+                                </div>
+                                <div class="text-muted small">Pending</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <div class="d-flex align-items-center text-muted small">
+                        <i class="ti ti-link me-1"></i>
+                        <span class="text-truncate">{$summary['shop']['url']}</span>
+                    </div>
+                </div>
+                {else}
+                <div class="card-body">
+                    <div class="alert alert-danger mb-0">
+                        <div class="d-flex">
+                            <div><i class="ti ti-alert-circle me-2"></i></div>
+                            <div>
+                                <h4 class="alert-title">Connection Failed</h4>
+                                <div class="text-muted">{$summary['error'] ?? 'Could not reach shop API'}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    {if $is_global_admin}
+                    <a href="{$app_base}/shops/{$shop_id}" class="btn btn-outline-secondary btn-sm">
+                        <i class="ti ti-settings me-1"></i> Settings
+                    </a>
+                    {/if}
+                </div>
+                {/if}
+            </div>
+        </div>
+        {/foreach}
+    </div>
+</div>
+{/if}
+{/block}
