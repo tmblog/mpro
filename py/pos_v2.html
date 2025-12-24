@@ -1,0 +1,2449 @@
+{% extends "base.html" %}
+
+{% block title %}POS{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/modals.custom.css') }}">
+{% endblock %}
+{% block content %}
+
+<div class="row min-vh-100 ps-1">
+    <div class="col-md-8" id="posMain">
+        <div class="row">
+            <!-- create new col-md-12 and decrease 73vh to 63 with 10 here -->
+            {% if menus and menus|length > 0 %}
+                <div class="col-md-12 px-0">
+                    <div class="row shadow-sm mx-1 rounded-1 px-2 align-items-center overflow-auto" style="max-height: 10vh;" id="menuFilters">
+                        <div class="col-md-2 p-0 border border-light">
+                            <button class="btn btn-outline-primary btn-sm w-100 text-truncate active" onclick="filterMenu('all', this)">All</button>
+                        </div>
+                        
+                        {% for m in menus %}
+                            {% set bg_color = m.menu_colour %}
+                            {% set white_text_colors = ['red', 'green', 'blue', 'purple', 'gray', 'brown', 'pink'] %}
+                            {% set text_colour = 'white' if bg_color in white_text_colors else 'black' %}
+                            <div class="col-md-2 p-0 border border-light">
+                                <button
+                                class="btn btn-outline-primary btn-sm w-100 text-truncate"
+                                onclick="filterMenu('{{ m.slug }}', this)"
+                                style="background-color: {{ bg_color }}; color: {{ text_colour }};">
+                                {{ m.name }}
+                                </button>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endif %}
+            <div class="col-md-12 px-0">
+                <div class="row shadow-sm mx-1 rounded-1 px-2 align-items-center overflow-auto" style="max-height: 30vh;" id="categories">
+                    {% for category in categories %}
+                    {% if category.product_count > 0 %}
+                        {% set cat_colour = 'btn-light' if category['category_colour'] else 'btn-info' %}
+                        {% set bg_color = category['category_colour'] %}
+                        {% set white_text_colors = ['red', 'green', 'blue', 'purple', 'gray', 'brown', 'pink'] %}
+                        {% set text_colour = 'white' if bg_color in white_text_colors else 'black' %}
+                        <div class="col-md-2 p-0 border border-light">
+                        <button
+                            class="category-btn btn {{ cat_colour }} w-100 rounded-0 text-truncate"
+                            data-category-id="{{ category['category_id'] }}"
+                            data-category-colour="{{ category['category_colour'] }}"
+                            data-menus="{{ (category.menu_slugs|join(',')) if category.menu_slugs else '' }}"
+                            style="background-color: {{ category['category_colour'] }}; padding: 10px; color: {{ text_colour }};">
+                            {{ category['category_name'] }}
+                        </button>
+                        </div>
+                    {% endif %}
+                    {% endfor %}
+                    <div class="col-md-2 p-0 border border-light">
+                        <button class="btn btn-soft-dark text-start w-100 rounded-0 col-md-3 text-truncate" onclick="createMiscItem(this);" style="padding:10px">Misc Item</button>
+                    </div>
+                    <div class="col-md-2 p-0 border border-light">
+                        <button class="category-btn btn btn-danger w-100 rounded-0 col-md-3 text-truncate" data-category-id="0" style="padding:10px">Favourites</button>
+                    </div>                
+                </div>
+            </div>
+            {% if menus and menus|length > 0 %}
+                {% set viewport = 58 %}
+                {% else %}
+                {% set viewport = 73 %}
+            {% endif %}
+            <div class="col-md-12 px-0">
+                <div class="bg-body-secondary border m-1 rounded-1 px-3 py-1 align-items-center overflow-auto" style="max-height: {{ viewport }}vh;min-height: {{ viewport }}vh;">
+                    <div class="products row" id="menuItems"> 
+                        <h4 class="mt-2">Start an order to see products</h4>
+                    </div>
+                    <!-- Enhanced Overlay -->
+                    <div id="productOverlay" class="product-overlay p-2 d-none">
+                        <!-- Loading State -->
+                        <div id="loadingState" class="loading-container text-center">
+                            <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <div class="mt-3 fs-5">Loading options...</div>
+                        </div>
+
+                        <!-- Content Container -->
+                        <div id="overlayContent" class="d-flex flex-column h-100" style="opacity: 0;">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <button class="btn btn-sm btn-danger ms-2" onclick="hideProductOptions()">
+                                    <i class="bi bi-arrow-left"></i> Cancel
+                                </button>
+                                <h4 class="mb-0 me-2" id="overlayTitle">Product Options</h4>
+                            </div>
+                            <div id="productOptionsContent" class="flex-grow-1 overlayBody" style="overflow-y: auto; overflow-x: hidden;">
+                                <!-- Options will be populated here -->
+                            </div>
+                            <div class="mt-3" id="overlayFooter">
+                                
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="customisationOverlay">
+                        <div class="overlay-container">
+                            <!-- Sticky Header -->
+                            <header class="overlay-header">
+                                <div class="container-fluid">
+                                    <div class="row align-items-center justify-content-between">
+                                        <div class="col-auto">
+                                            <button id="customCloseBtn" class="btn btn-danger btn-sm" onclick="closeCustomisation()">
+                                                <i class="bi bi-x-circle"></i> Cancel
+                                            </button>
+                                        </div>
+                                        <div class="col-auto fw-bold fs-4 text-primary" id="customSelectionStatus">
+                                            Selected: 0 / 0
+                                        </div>
+                                        <div class="col-auto">
+                                            <button class="btn btn-sm btn-warning" id="customResetBtn" onclick="resetCurrentStep(0)">
+                                                Reset <i class="bi bi-arrow-clockwise"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </header>
+
+                            <!-- Scrollable Content Area -->
+                            <main class="overlay-content">
+                            <div class="container-fluid">
+                                <div class="row" id="customisationStepContainer"></div>
+                            </div>
+                            </main>
+
+                            <!-- Sticky Footer -->
+                            <footer class="overlay-footer">
+                            <div class="container-fluid">
+                                <div class="row align-items-center">
+                                <div class="col">
+                                    <button id="customPrevBtn" class="btn btn-secondary"><i class="bi bi-arrow-left"></i> Previous</button>
+                                </div>
+                                <div class="col">
+                                    <button id="customRunningTotal" class="btn btn-success fw-bold">
+                                    <i class="bi bi-cart-plus me-1"></i> Add to Cart £0.00
+                                    </button>
+                                </div>
+                                <div class="col-auto">
+                                    <button id="customNextBtn" class="btn btn-primary">Next <i class="bi bi-arrow-right"></i></button>
+                                </div>
+                                </div>
+                            </div>
+                            </footer>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+        
+    </div>
+    <div class="col-md-4 p-0">
+        <div class="card m-1 rounded-1">
+            <div class="btn-group w-100 shadow-sm">
+                <button class="btn btn-success btn-sm" onclick="fetchPosMethods();">
+                    <i class="bi-plus"></i> New
+                </button>
+                <button class="btn btn-warning btn-sm text-white" onclick="getAllCarts(this);">
+                    <i class="bi-pause"></i> Parked
+                </button>
+                <button class="btn btn-info btn-sm" onclick="getRecentCarts(this);">
+                    <i class="bi-clock"></i> Recent
+                </button>
+            </div>
+        </div>
+        <div class="card m-1 rounded-1">
+            <div class="card-body p-2">
+                <div class="d-flex justify-content-between align-items-start gap-2" id="cartView">
+                    
+                </div>
+            </div>
+        </div>
+        <div class="card m-1 rounded-1 bg-primary-subtle" style="height: {{ screen_zoom }}vh;overflow-y: auto;">
+            <div class="card-body p-2" id="cartItemView">
+                
+            </div>
+        </div>
+        <div class="card m-1 rounded-1">
+            <div class="card-body p-2 fw-bold" id="cartUtility">
+                Subtotal: <span class="float-end" id="subtotalSpan"></span><br>
+                <span id="deliveryServiceSpan">Service:</span> <span class="float-end" id="serviceSpan"></span><br>
+                Discount: <span class="float-end" id="discountSpan"></span><br>
+                Total: <span class="float-end" id="totalSpan"></span>
+            </div>
+        </div>
+        <div class="card m-1 rounded-1">
+            <div class="card-body text-nowrap p-2" id="checkoutDiv">
+                
+            </div>
+        </div>
+    </div>
+</div>
+ <!-- last orders off canvas -->
+ <div class="offcanvas offcanvas-end" tabindex="-1" id="lastOrdersCanvas">
+    <div class="offcanvas-header">
+        <h5 class="offcanvas-title">Last orders</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+    </div>
+    <div class="offcanvas-body" id="lastOrdersCanvasBody">
+        <div id="lastOrdersAccordion" class="accordion"></div>
+    </div>
+</div>
+<div class="toast-container position-fixed top-0 end-0 p-3" id="toastContainer" style="z-index: 1055;">
+<!-- Toasts will be dynamically injected here -->
+</div>
+{% endblock %}
+
+{% block footer %}
+<script>
+    const POS_CONFIG = {
+        userRole: Number("{{ session['role']|default(1) }}"),
+        maxDiscountPercent: Number("{{ session['max_discount_for_role_two']|default(10) }}")
+    };
+</script>
+<script src="{{ url_for('static', filename='js/sweetalert.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/pos.helpers.js') }}"></script>
+<script src="{{ url_for('static', filename='js/pos.steps.methods.helpers.js') }}"></script>
+<script src="{{ url_for('static', filename='js/checkout.helpers.js') }}"></script>
+<script src="{{ url_for('static', filename='js/discount.helpers.js') }}"></script>
+<script>
+    let customData = {
+        steps: [],
+        selections: [],
+        currentStep: 0,
+        basePrice: 0,
+        meta: null
+    };
+    let lastCustomTotal = 0;
+    function launchCustomisationUI(options, meta = {}) {
+        customData.steps = options;
+        customData.selections = Array(options.length).fill(null).map(() => ({}));
+        customData.currentStep = 0;
+        customData.basePrice = parseFloat(meta.formattedPrice) || 0;
+        customData.meta = meta;
+        const overlay = document.getElementById('customisationOverlay');
+        overlay.classList.add('show');
+        renderCustomisationStep(options[0], 0);
+        updateCustomFooter();
+    }
+
+    function renderCustomisationStep(step, stepIndex) {
+        const selected = customData.selections[stepIndex];
+        const container = document.getElementById('customisationStepContainer');
+        const selectedCount = Object.values(selected).reduce((a, b) => a + b, 0);
+        const maxAllowed = step.option_item_max;
+        const stepTitle = step.option_name || `Step ${stepIndex + 1}`;
+
+        // Update top bar counter
+        document.getElementById('customSelectionStatus').textContent = `${stepTitle} Selected: ${selectedCount} / ${maxAllowed}`;
+
+        // Update reset button handler
+        const resetBtn = document.getElementById('customResetBtn');
+        resetBtn.setAttribute('onclick', `resetCurrentStep(${stepIndex})`);
+
+        // Render options
+        const rowsHTML = step.items.map(item => {
+            const count = selected[item.option_item_id] || 0;
+
+            const whiteTextColors = ['red', 'green', 'blue', 'purple', 'gray', 'brown'];
+
+            const bgColor = item.option_item_colour; // e.g. "red", "orange", etc.
+            const optionTextColour = whiteTextColors.includes(bgColor) ? 'white' : 'black';
+
+            const style = !bgColor ? '' : `style="background-color: ${bgColor}; color: ${optionTextColour};"`;
+
+            return `
+            <div class="col-xl-3 col-md-3 m-0 p-1">
+                <div class="d-flex align-items-center border rounded-2 overflow-hidden h-100 w-100 hover-shadow">
+                ${count > 0
+                    ? `<button class="btn btn-sm btn-dark h-100 border-0 rounded-0 px-2" onclick="decreaseItem(${item.option_item_id}, ${stepIndex}, event)">
+                        <i class="bi bi-dash-circle-fill"></i>
+                    </button>`
+                    : ''
+                }
+                <button ${style} type="button"
+                        class="btn btn-light text-start border-0 ${count > 0 ? 'border-start' : ''} py-2 h-100 w-100 text-break"
+                        onclick="increaseItem(${item.option_item_id}, ${step.option_item_max}, ${stepIndex})">
+                    ${item.option_item_name} ${item.price > 0 ? `<strong>£${item.price.toFixed(2)}</strong>` : ''}
+                    <span class="badge bg-secondary text-white p-2 float-end">${count}</span>
+                </button>
+                </div>
+            </div>`;
+        }).join('');
+
+        container.innerHTML = rowsHTML;
+        }
+
+    function resetCurrentStep(stepIndex) {
+        customData.selections[stepIndex] = {};
+        renderCustomisationStep(customData.steps[stepIndex], stepIndex);
+        updateCustomFooter();
+    }
+
+    function increaseItem(id, max, stepIndex) {
+        const selected = customData.selections[stepIndex];
+        const total = Object.values(selected).reduce((a, b) => a + b, 0);
+        if (total < max) {
+            selected[id] = (selected[id] || 0) + 1;
+            renderCustomisationStep(customData.steps[stepIndex], stepIndex);
+            updateCustomFooter();
+
+            // Auto-advance if max is 1
+            if (max === 1) {
+            setTimeout(() => {
+                if (stepIndex < customData.steps.length - 1) {
+                customData.currentStep++;
+                renderCustomisationStep(customData.steps[customData.currentStep], customData.currentStep);
+                updateCustomFooter();
+                } else {
+                // On last step, do NOT auto-complete, allow user to confirm
+                // Optional: scroll to footer or pulse add-to-cart
+                const totalBtn = document.getElementById('customRunningTotal');
+                totalBtn.classList.remove('custom-total-animate');
+                void totalBtn.offsetWidth;
+                totalBtn.classList.add('custom-total-animate');
+                }
+            }, 200); // slight delay so UI shows the tick before transition
+            }
+        }
+    }
+
+    function decreaseItem(id, stepIndex, event) {
+        event.stopPropagation();
+        const selected = customData.selections[stepIndex];
+        if (selected[id]) {
+            selected[id]--;
+            if (selected[id] <= 0) delete selected[id];
+            renderCustomisationStep(customData.steps[stepIndex], stepIndex);
+            updateCustomFooter();
+        }
+    }
+
+    function updateCustomFooter() {
+        document.getElementById('customPrevBtn').disabled = customData.currentStep === 0;
+        document.getElementById('customNextBtn').innerHTML = customData.currentStep === customData.steps.length - 1 ? 'Finish <i class="bi bi-check"></i>' : 'Next <i class="bi bi-arrow-right"></i>';
+        const total = calculateCustomTotal();
+        const totalBtn = document.getElementById('customRunningTotal');
+        totalBtn.innerHTML = `<i class="bi bi-cart-plus me-1"></i> Add to Cart £${total.toFixed(2)}`;
+
+        if (total !== lastCustomTotal) {
+        totalBtn.classList.remove('custom-total-animate');
+        void totalBtn.offsetWidth; // force reflow
+        totalBtn.classList.add('custom-total-animate');
+        }
+        lastCustomTotal = total;
+    }
+
+    function calculateCustomTotal() {
+        let total = customData.basePrice;
+        customData.steps.forEach((step, idx) => {
+            const selection = customData.selections[idx];
+            for (const [id, qty] of Object.entries(selection)) {
+            const item = step.items.find(i => i.option_item_id == id);
+            if (item) total += item.price * qty;
+            }
+        });
+        return total;
+    }
+
+    function closeCustomisation() {
+        document.getElementById('customisationOverlay').classList.remove('show');      
+    }
+
+    document.getElementById('customPrevBtn').addEventListener('click', () => {
+        if (customData.currentStep > 0) {
+            customData.currentStep--;
+            renderCustomisationStep(customData.steps[customData.currentStep], customData.currentStep);
+            updateCustomFooter();
+        }
+    });
+
+    document.getElementById('customNextBtn').addEventListener('click', () => {
+        if (customData.currentStep < customData.steps.length - 1) {
+            customData.currentStep++;
+            renderCustomisationStep(customData.steps[customData.currentStep], customData.currentStep);
+            updateCustomFooter();
+        } else {
+            completeCustomisation();
+        }
+    });
+
+    document.getElementById('customRunningTotal').addEventListener('click', () => {
+        completeCustomisation();
+    });
+
+    function completeCustomisation() {
+        const optionString = buildOptionString();
+        addToCart(
+            customData.meta.productId,
+            customData.meta.productName,
+            customData.meta.formattedPrice,
+            optionString,
+            customData.meta.categoryOrder,
+            customData.meta.vatable
+        );
+        closeCustomisation();
+    }
+
+    function buildOptionString() {
+        const parts = [];
+        customData.steps.forEach((step, stepIndex) => {
+            const selection = customData.selections[stepIndex];
+            for (const [id, qty] of Object.entries(selection)) {
+            const item = step.items.find(i => i.option_item_id == id);
+            if (item) {
+                parts.push(`${id}|${item.option_item_name}|${item.price}|${stepIndex}|${qty}|${item.vatable}`);
+            }
+            }
+        });
+        return parts.join(', ');
+    }
+
+    function getAllCarts(button) {
+        disableButtonWithSpinner(button);
+        fetch('/get_all_carts')
+        .then(function (response) {
+            return response.json();
+        })
+        .then(function (data) {
+            if (data.length > 0) {
+                const cartDiv = document.createElement('div');
+                cartDiv.classList.add('row', 'g-1', 'mb-2'); // Added gap spacing
+
+                data.forEach(cartObj => {
+                    const [id, type, , timestamp, , itemCount, details, tableNumber] = cartObj;
+                    const formattedTime = moment(timestamp).fromNow();
+                    
+                    // Color and icon mapping
+                    const typeConfig = {
+                        'takeaway': { class: 'btn-primary', icon: 'bi-bag', label: 'Takeaway' },
+                        'delivery': { class: 'btn-success', icon: 'bi-truck', label: 'Delivery' },
+                        'waiting': { class: 'btn-warning', icon: 'bi-hourglass', label: 'Waiting' },
+                        'sale': { class: 'btn-primary', icon: 'bi-receipt', label: 'General Sale' },
+                        'dine': { class: 'btn-info', icon: 'bi-cup-hot', label: `Table ${tableNumber}` },
+                        'default': { class: 'btn-secondary', icon: 'bi-cart', label: 'Order' }
+                    };
+                    
+                    const config = typeConfig[type] || typeConfig.default;
+                    const displayDetails = type === 'dine' ? '' : `<small class="d-block">${details}</small>`;
+                    
+                    const buttonHtml = `
+                    <div class="col-lg-3 col-md-4 col-sm-6">
+                        <button class="btn ${config.class} w-100 h-100 p-3 position-relative text-start border-bottom border-dark" 
+                                onclick="fetchCartData(${id}); closeModal();">
+                            <div class="d-flex align-items-center gap-2">
+                                <i class="bi ${config.icon} fs-5"></i>
+                                <div>
+                                    <div class="fw-semibold">${config.label}</div>
+                                    ${displayDetails}
+                                    <small class="text-white-50">${formattedTime}</small>
+                                </div>
+                            </div>
+                            <span class="position-absolute top-0 end-0 translate-middle-y badge rounded-pill bg-danger me-2">
+                                ${itemCount} items
+                            </span>
+                        </button>
+                    </div>`;
+                    
+                    cartDiv.innerHTML += buttonHtml;
+                });
+                    updateModal('Saved Carts', cartDiv.outerHTML, '');
+                    openModal();
+            } else {
+                updateModal('No carts saved', '<h4>No saved carts are available</h4>', '');
+                openModal();
+            }
+            enableButtonRemoveSpinner(button);
+        })
+        .catch(function (error) {
+            console.error('Error:', error);
+        });
+    }
+    
+    function getDeliveryPrice() {
+        const postcode = document.getElementById('customerPostcode').value;
+        const address = document.getElementById('customerAddress').value;
+        const deliveryPriceInput = document.getElementById('deliveryPrice');
+        const postcodeInput = document.getElementById('customerPostcode');
+        const respBlock = document.getElementById('postcodeResponse');
+        const addressDistance = document.getElementById('addressDistance');
+
+        if (postcode) {
+            fetch('/get_delivery_price', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ postcode, address, customerId })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    respBlock.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+                    return;
+                } else {
+                    respBlock.innerHTML = `Delivery price: £${data.price.toFixed(2)}, Distance: ${data.distance} miles.`;
+                    postcodeInput.classList.remove('border-danger');
+                    deliveryPriceInput.value = data.price.toFixed(2);
+                    addressDistance.value = data.distance;
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        } else {
+            postcodeInput.classList.remove('border-dark');
+            postcodeInput.classList.add('border-danger');
+        }
+    }
+    
+    function handleProductButton(event, productId, productName, formattedPrice, options, currentMenu, categoryOrder, vatable) {
+        event.preventDefault();
+        playSoundFile("stop.mp3");
+        if (options === 'null') {
+            addToCart(productId, productName, formattedPrice, options, categoryOrder, vatable);
+        } else {
+            const optionArray = options.split(',').map(option => option.trim());
+            fetchOptionsData(optionArray, currentMenu, productId, productName, formattedPrice, categoryOrder, vatable);
+        }
+    }
+
+    function addToCart(productId, productName, formattedPrice, options, categoryOrder, vatable) {
+        const cartId = getCurrentCartId();
+        if (!cartId) {
+            fetchPosMethods();
+            return;
+        }
+        const data = {
+            productId,
+            cartId,
+            productName,
+            formattedPrice,
+            quantity: 1,
+            options: options == "null" ? "" : options,
+            productNote: "",
+            categoryOrder,
+            vatable: vatable
+        };
+        fetch('/add_to_cart', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.error) {
+                showToast(result.error, false);
+            } else {
+                fetchAndDisplayCartItems(cartId);
+            }
+        })
+        .catch(error => {
+            console.error("Error:", error);
+            showToast("Error adding item to cart", false);
+        });
+    }
+
+    function fetchOptionsData(optionArray, currentMenu, productId, productName, formattedPrice, categoryOrder, vatable) {
+        fetch('/get_product_options', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                product_id: productId,
+                option_ids: optionArray,
+                current_menu: currentMenu
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.options) {
+                launchCustomisationUI(data.options, { productId, productName, formattedPrice, categoryOrder, vatable });
+            } else {
+                showToast('No options found for this product', false);
+            }
+        })
+        .catch(err => {
+            console.error('Option fetch failed', err);
+            showToast('Error fetching options', false);
+        });
+    }
+
+    // Function to load products for a specific category
+    function loadProducts(categoryId, currentMenu, categoryColour, categoryTextColour) {
+        if (!currentMenu) {
+            fetchPosMethods();
+            return;
+        }
+        fetch(`/get_products_v2/${categoryId}/${currentMenu}`)
+            .then(response => response.json())
+            .then(data => {
+                var productsHtml = '';
+                data.forEach(function(product) {
+                    const formattedPrice = parseFloat(product[2]).toFixed(2);
+                    const hasOptions = product[3] && product[3].trim() !== '';
+                    const optionMarker = hasOptions ? '<span class="badge rounded-pill text-bg-dark">+</span>' : '';
+                    
+                    // Inventory tracking
+                    const trackInventory = product[7];
+                    const stockQuantity = product[8];
+                    const lowStockThreshold = product[9];
+                    const isOutOfStock = trackInventory === 1 && stockQuantity <= 0;
+                    const isLowStock = trackInventory === 1 && stockQuantity > 0 && stockQuantity <= lowStockThreshold;
+                    
+                    // Badge logic
+                    let stockBadge = '';
+                    if (isOutOfStock) {
+                        stockBadge = '<span class="badge rounded-pill text-bg-danger">OUT OF STOCK</span>';
+                    } else if (isLowStock) {
+                        stockBadge = `<span class="badge rounded-pill text-bg-warning">${stockQuantity} left</span>`;
+                    }
+                    
+                    const whiteTextColors = ['red', 'green', 'blue', 'purple', 'gray', 'brown'];
+                    const bgColor = product[6];
+                    const categoryTextColour = whiteTextColors.includes(bgColor) ? 'white' : 'black';
+                    const style = !bgColor ? '' : `style="background-color: ${bgColor}; color: ${categoryTextColour};"`;
+                    const productName = product[1].replace(/'/g, '');
+                    
+                    // Disable button and add opacity if out of stock
+                    const disabledAttr = isOutOfStock ? 'disabled' : '';
+                    const opacityStyle = isOutOfStock ? 'opacity: 0.5;' : '';
+                    const fullStyle = !bgColor ? `style="${opacityStyle}"` : `style="background-color: ${bgColor}; color: ${categoryTextColour}; ${opacityStyle}"`;
+                    
+                    productsHtml += `
+                        <div class="col-xl-3 col-md-3 col-sm-4 m-0 p-0 border border-light border-opacity-10">
+                            <button class="btn btn-light btn-card w-100 h-100 rounded-0" 
+                                    onclick="handleProductButton(event, '${product[0]}','${productName}', '${formattedPrice}', '${product[3]}', '${currentMenu}', '${product[4]}', '${product[5]}')" 
+                                    ${fullStyle} 
+                                    ${disabledAttr}>
+                                <div class="mb-1 product-name">${productName} ${stockBadge}</div>
+                                <div class="mb-0 fw-bold product-price">${optionMarker} £${formattedPrice}</div>
+                            </button>
+                        </div>
+                    `;
+                });
+                document.querySelector('.products').innerHTML = productsHtml;
+            });
+    }
+
+    function createNewCart(orderType, orderMenu, overallNote, customer, cartId, currentMenu) {
+        const data = {
+            order_type: orderType,
+            order_menu: orderMenu,
+            overall_note: overallNote,
+            customer: customer,
+            cart_id: cartId,
+            current_menu: currentMenu
+        };
+        fetch('/create_cart', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Failed to retrieve cart data');
+            }
+            return response.json();
+        })
+        .then(data => {
+            const cartId = data.cart_id;
+            setCurrentCartId(cartId);
+            fetchCartData(cartId);
+            resetCheckoutTotals();
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            });
+        }
+
+    function fetchCartData(cartId) {
+        return fetch(`/get_current_cart/${cartId}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Failed to retrieve cart data');
+                }
+                return response.json();
+            })
+            .then(data => {
+                displayCartData(data);
+                setCurrentCartId(cartId);
+                setCurrentCartMenu(data.cart_menu);
+                loadProductsForSelectedCategory(String(data.cart_menu));
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+    }
+
+    function displayCartData(cartData) {
+        const cartViewDiv = document.getElementById('cartView');
+        if (cartViewDiv) {
+            let address = cartData.address == null ? "" : cartData.address;
+            let postcode = cartData.postcode == null ? "" : cartData.postcode;
+            const htmlContent = `
+                <div style="flex: 1; min-width: 0;">
+                    <button class="btn btn-link text-dark p-0 text-start d-block w-100" 
+                            onclick="customerOrders('${cartData.customer_id}','${cartData.cart_id}', '${cartData.cart_menu}')">
+                        
+                        ${cartData.table_number == null ? `
+                        <div class="d-flex align-items-center gap-2">
+                            <i class="bi-person-fill text-muted"></i>
+                            <span class="fw-semibold text-truncate">${cartData.customer_name}</span>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2 text-muted mt-1 text-uppercase">
+                            <small><i class="bi-telephone me-2"></i> ${cartData.customer_telephone}</small>
+                            ${postcode ? `<small><i class="bi-geo-alt"></i> ${postcode}</small>` : ''}
+                        </div>
+                        ` : `
+                        <div class="d-flex align-items-center gap-2">
+                            <i class="bi-cup-hot-fill text-muted"></i>
+                            <span class="fw-semibold">Table ${cartData.table_number}</span>
+                        </div>
+                        `}
+                    </button>
+                    
+                    <button class="btn btn-dark btn-sm rounded-pill mt-2 text-capitalize" 
+                            onclick="fetchPosMethods('${cartData.cart_id}')">
+                        <i class="${cartData.order_type === 'delivery' ? 'bi-truck' : cartData.order_type === 'takeaway' || cartData.order_type === 'waiting' ? 'bi-bag' : 'bi-shop'}"></i> 
+                        ${cartData.order_type}
+                    </button>
+                </div>
+                
+                <!-- Order Actions -->
+                <div class="d-flex flex-column align-items-end gap-2">
+                    <span class="badge bg-secondary px-2">#${cartData.cart_id}</span>
+                    <button class="btn btn-outline-danger btn-sm" 
+                            onclick="confirmAction(${cartData.cart_id}, 'Delete this cart?', deleteCart)">
+                        <i class="bi-trash3"></i>
+                    </button>
+                </div>
+            `;
+            cartViewDiv.innerHTML = htmlContent;
+        }
+        fetchAndDisplayCartItems(cartData.cart_id);
+    }
+
+    function getCartItems(cartId) {
+        return fetch(`/get_cart_items/${cartId}`)
+            .then((response) => {
+                if (response.ok) {
+                    return response.json();
+                } 
+                else {
+                    throw new Error('Failed to fetch cart items.');
+                }
+            })
+            .catch((error) => {
+                console.error('Error: ', error);
+                throw error;
+            });
+    }
+
+    function fetchAndDisplayCartItems(cartId) {
+        const cartItemView = document.getElementById("cartItemView");
+        const cartUtilityDiv = document.getElementById("cartUtility");
+        const checkoutDiv = document.getElementById("checkoutDiv");
+
+        getCartItems(cartId)
+            .then(data => {
+                const cartItems = data.items || [];
+                const cartItemsQty = cartItems.length;
+                console.log('Cart items:', cartItems);
+                if (cartItemsQty > 0) {
+                    const cartData = data.cart_data || {};
+                    let grandTotal = 0;              // sum of all line totals (after per-item discounts)
+                    let discountableSubtotal = 0;    // sum of line totals where item.cpn == 1
+                    let totalItems = 0;
+
+                    const listGroupHTML = cartItems.map(item => {
+                        const dataString = item.options || '';
+                        const sets = dataString ? dataString.split(', ') : [];
+
+                        let totalPrice = 0; // options total for this product (before per-item discount)
+                        let optionBadgeHTML = '';
+
+                        totalItems += (parseInt(item.quantity) || 0);
+
+                        // Build option badges + accumulate options price
+                        sets.forEach(set => {
+                            const parts = set.split('|'); // expect 6-tuple per option
+                            const name = parts[1] || '';
+                            const price = parseFloat(parts[2]) || 0;
+                            const qty = parseInt(parts[4]) || 1;
+
+                            if (name) {
+                                const qtyLabel = qty > 1 ? (qty + 'x ') : '';
+                                optionBadgeHTML += `<span class="badge bg-info">${qtyLabel}${name}</span> `;
+                            }
+                            totalPrice += price * qty;
+                        });
+
+                        optionBadgeHTML = optionBadgeHTML.trim();
+
+                        const mods = (item.product_note || '')
+                            .split('|')
+                            .filter(Boolean)
+                            .map(m => `<span class="badge bg-warning">${m}</span> `)
+                            .join('');
+
+                        // Line total already includes per-item discount via your helper
+                        const discountedPrice = parseFloat(calculateDiscountedPriceForCartItems(item, totalPrice)) || 0;
+                        const lineTotal = discountedPrice;
+
+                        grandTotal += lineTotal;
+
+                        // Only include discountable items for cart-level discount
+                        const isDiscountable = (item.cpn === 1 || item.cpn === '1' || item.cpn === true);
+                        if (isDiscountable) {
+                            discountableSubtotal += lineTotal;
+                        }
+
+                        const badgeForUpdate = encodeURIComponent(optionBadgeHTML);
+                        const fullPriceBeforeItemDiscount = ((parseFloat(item.price) || 0) + totalPrice) * (parseInt(item.quantity) || 1);
+                        const perItemDiscountAmount = (fullPriceBeforeItemDiscount - lineTotal);
+
+                        return `
+                            <li class="list-group-item list-group-item-action mb-1"
+                                onclick="showCartModifiers('${item.cart_item_id}','${item.product_name}','${item.quantity}','${lineTotal.toFixed(2)}','${badgeForUpdate}')"
+                                style="cursor: pointer;">
+                                <div class="d-flex justify-content-between">
+                                    <!-- Left Content -->
+                                    <div style="flex: 1; min-width: 0;">
+                                        <div class="d-flex align-items-center">
+                                            <span class="badge bg-primary me-2">${item.quantity}</span>
+                                            <span class="text-truncate">${item.product_name}</span>
+                                        </div>
+                                        <div class="mt-1">
+                                            ${optionBadgeHTML} ${mods === "" ? '' : mods}
+                                        </div>
+                                    </div>
+
+                                    <!-- Right Content -->
+                                    <div class="d-flex flex-column align-items-end ms-2" style="flex-shrink: 0;">
+                                        <div class="d-flex align-items-center fw-bold">
+                                            <span>£${lineTotal.toFixed(2)}</span>
+                                            <i class="bi-x-circle-fill text-danger ms-2 fs-4"
+                                            onclick="event.stopPropagation(); removeItem('${cartId}','${item.cart_item_id}',false)"
+                                            style="cursor: pointer;"></i>
+                                        </div>
+                                        ${perItemDiscountAmount > 0 ? `
+                                            <small class="text-muted me-auto">-£${perItemDiscountAmount.toFixed(2)}</small>
+                                        ` : ''}
+                                    </div>
+                                </div>
+                            </li>
+                        `;
+                    }).join('');
+
+                    // Render list
+                    cartItemView.innerHTML = `
+                        <ul class="list-group list-group">
+                            ${listGroupHTML}
+                        </ul>
+                    `;
+
+                    // Subtotal before cart-level discount & service
+                    document.getElementById("subtotalSpan").textContent = `£${grandTotal.toFixed(2)}`;
+
+                    // Cart-level discount (only on discountable items)
+                    let discount = 0;
+                    const cartDiscountVal = parseFloat(cartData.cart_discount) || 0;
+                    const cartDiscountType = cartData.cart_discount_type; // 'fixed' or 'percentage'
+
+                    if (cartDiscountVal > 0) {
+                        if (cartDiscountType === 'fixed') {
+                            // Fixed discount cannot exceed discountable subtotal
+                            discount = Math.min(cartDiscountVal, discountableSubtotal);
+                        } else if (cartDiscountType === 'percentage') {
+                            discount = (discountableSubtotal * cartDiscountVal) / 100;
+                        }
+                    }
+
+                    // Show discount label (unchanged from your UI logic)
+                    const discountSpan = document.getElementById("discountSpan");
+                    let discountText = "";
+                    if (cartDiscountType === 'fixed') {
+                        discountText = `£${cartDiscountVal.toFixed(2)}`;
+                    } else if (cartDiscountType === 'percentage') {
+                        discountText = `${cartDiscountVal.toFixed(2)}%`;
+                    }
+                    discountSpan.innerHTML = `${discountText}`;
+
+                    // Service charge: computed AFTER discount
+                    // If dine, treat cart_service_charge as a percentage of (grandTotal - discount)
+                    // Otherwise, treat it as a fixed amount.
+                    const baseForService = Math.max(0, grandTotal - discount);
+                    const servicePercentOrFixed = parseFloat(cartData.cart_service_charge) || 0;
+                    const serviceAmount = cartData.order_type === "dine"
+                        ? (baseForService * servicePercentOrFixed) / 100
+                        : servicePercentOrFixed;
+
+                    // Update any service/delivery UI
+                    deliveryServiceChargeDisplay(cartData.order_type, serviceAmount);
+
+                    // Final total: (subtotal - discount) + service
+                    const discountedTotal = baseForService + serviceAmount;
+
+                    // Total line + item count badge
+                    const totalSpan = document.getElementById("totalSpan");
+                    totalSpan.innerHTML = `<span class="badge bg-primary">${totalItems} items</span> £${discountedTotal.toFixed(2)}`;
+
+                    // Action buttons
+                    const noteClass = (cartData.overall_note && cartData.overall_note.length > 0) ? "info" : "secondary";
+                    checkoutDiv.innerHTML = `
+                        <div class="d-flex flex-column w-100 gap-2">
+                            <!-- Payment Buttons Row -->
+                            <div class="d-flex w-100 gap-1">
+                                <button class="btn btn-success btn-lg flex-grow-1 w-50 text-nowrap fs-4 fs-md-5"
+                                    onclick="showCheckout(${cartId}, ${discountedTotal.toFixed(2)}, ${discount.toFixed(2)}, ${serviceAmount.toFixed(2)}, this)">
+                                    Charge £${discountedTotal.toFixed(2)}
+                                </button>
+                                <button class="btn btn-primary btn-lg flex-grow-1 w-50"
+                                    onclick="completeCardCheckout(${cartId}, ${discountedTotal.toFixed(2)}, false, '${data.card_vendor}', this)">
+                                    Card
+                                </button>
+                            </div>
+
+                            <!-- Action Buttons Row -->
+                            <div class="d-flex w-100 gap-1">
+                                <button class="btn btn-dark flex-grow-1" onclick="printPosReceipt(${cartId}, this)">
+                                    <i class="bi-printer-fill"></i>
+                                </button>
+                                {% if kitchen_print %}
+                                    <button class="btn btn-light flex-grow-1" onclick="printKitchenReceipt(${cartId}, this)">
+                                        <i class="bi-cup-hot"></i>
+                                    </button>
+                                {% endif %}
+
+                                {% if 'role' in session %}
+                                    {% if session['role'] > 1 %}
+                                        <button class="btn btn-warning flex-grow-1" onclick="showDiscountRules(this);">
+                                            <i class="bi-percent"></i>
+                                        </button>
+                                    {% endif %}
+                                {% endif %}
+
+                                <button class="btn btn-${noteClass} flex-grow-1" onclick="showCartNote(${cartId})">
+                                    <i class="bi-file-text"></i>
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    cartItemView.innerHTML = `
+                        <ul class="list-group list-group-flush">
+                            <li class="list-group-item list-group-item-action" role="button">Add some items to get started</li>
+                        </ul>
+                    `;
+                }
+            })
+            .catch(error => {
+                console.error('Fetch error:', error);
+            });
+    }
+
+    function calculateDiscountedPriceForCartItems(item, totalPrice) {
+        if (item.product_discount > 0) {
+            if (item.product_discount_type === 'percentage') {
+            const discountAmount = (item.product_discount / 100) * ((item.price + totalPrice) * item.quantity);
+            return ((item.price + totalPrice) * item.quantity - discountAmount).toFixed(2);
+            } else if (item.product_discount_type === 'fixed') {
+            return ((item.price + totalPrice - item.product_discount) * item.quantity).toFixed(2);
+            }
+        }
+        return ((item.price + totalPrice) * item.quantity).toFixed(2);
+    }
+
+    function customerOrders(customerId, cartId, cartMenu) {
+        fetch(`/customer_orders/${customerId}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch customer orders. Status code: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                const customerInfo = data.customer_info;
+                let guestFields = customerInfo.customer_name.toLowerCase().includes('guest') ? 'readonly' : '';
+                let fullHtml = `
+                    <div class="row g-1 mb-2">
+                        <div class="col-md-5">
+                            <input type="text" class="form-control border border-dark" placeholder="Name" value="${customerInfo.customer_name}" id="currentCustomerName" ${guestFields}>
+                        </div>
+                        <div class="col-md-4">
+                            <input type="text" class="form-control border border-dark" placeholder="Phone" value="${customerInfo.customer_telephone}" id="currentCustomerPhone" ${guestFields}>
+                        </div>
+                        <div class="col-md-3">
+                            <input type="text" class="form-control border border-dark" placeholder="Postcode" value="${customerInfo.postcode}" id="currentCustomerPostcode" ${guestFields}>
+                        </div>
+                        <div class="col-md-10">
+                            <input type="text" class="form-control border border-dark" placeholder="Address" value="${customerInfo.address}" id="currentCustomerAddress" ${guestFields}>
+                        </div>
+                        <input type="hidden" value="${customerInfo.address_id}" id="currentAddressId">
+                        <input type="hidden" value="${customerId}" id="currentCustomerId">
+                        <div class="col-md-2">
+                            <button type="button" class="btn btn-info w-100" onclick="updateCustomerDetails(${cartId})">Save</button>
+                        </div>
+                        <div class="col-md-12" id="updateMsg">
+                        </div>
+                    </div>`;
+                fullHtml += `<div class="row">`;
+                    if (data.orders.length) {
+                        const groupedOrders = new Map();
+
+                        data.orders.forEach(order => {
+                            const orderId = order.order_id;
+                            if (!groupedOrders.has(orderId)) {
+                                groupedOrders.set(orderId, {
+                                    order_details: {
+                                        order_id: order.order_id,
+                                        order_type: order.order_type,
+                                        order_date: order.order_date
+                                    },
+                                    order_items: []
+                                });
+                            }
+                            groupedOrders.get(orderId).order_items.push({
+                                product_id: order.product_id,
+                                product_name: order.product_name,
+                                quantity: order.quantity,
+                                price: order.price,
+                                note: order.product_note,
+                                options: order.options,
+                                category_order: order.category_order
+                            });
+                        });
+
+                        fullHtml += `
+                            <div class="col-md-5">
+                                <div class="accordion accordion-flush" id="reorderAccordion">`;
+
+                        for (const [orderId, group] of groupedOrders) {
+                            const orderDetails = group.order_details;
+                            const orderItems = group.order_items;
+
+                            let total = 0;
+                            const idsAndQuantities = [];
+                            orderItems.forEach(item => {
+                                const optionIds = [];
+                                total += item.quantity * item.price;
+
+                                if (item.options) {
+                                    const optionsArray = item.options.split(', ');
+                                    optionsArray.forEach(option => {
+                                        const optionDetails = option.split('|');
+                                        const optionPrice = parseFloat(optionDetails[2]);
+                                        if (!isNaN(optionPrice)) {
+                                            total += item.quantity * optionPrice;
+                                        }
+                                        optionIds.push(optionDetails[0]);
+                                    });
+                                }
+
+                                idsAndQuantities.push({
+                                    product_id: item.product_id,
+                                    quantity: item.quantity,
+                                    category_order: item.category_order,
+                                    note: item.note,
+                                    options: optionIds
+                                });
+                            });
+
+                            let accordionItem = `
+                                <div class="accordion-item">
+                                    <h2 class="accordion-header">
+                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" 
+                                            data-bs-target="#flush-collapse-${orderDetails.order_id}">
+                                            #${orderDetails.order_id} ${orderDetails.order_type} ${moment(orderDetails.order_date).format('HH:mm ddd DD/MM/YY')} £${total.toFixed(2)}
+                                        </button>
+                                    </h2>
+                                    <div id="flush-collapse-${orderDetails.order_id}" class="accordion-collapse collapse" data-bs-parent="#reorderAccordion">
+                                        <div class="accordion-body row">
+                                            <div class="col-md-7 list-group list-group-flush">
+                                                ${orderItems.map(item => `<span class="list-group-item list-group-item-action p-1">
+                                                    ${item.quantity}x ${item.product_name} £${item.price.toFixed(2)}<br>
+                                                    ${!item.note ? "" : item.note.split('|').map(note => `<span class="badge bg-warning">${note}</span> `).join('') + "<br>"}
+                                                    ${item.options ? item.options.split(', ').map(option => option.split('|')[1]).map(name => `<span class="badge bg-primary">${name}</span> `).join('') + "<br>" : ""}
+                                                </span>`).join('')}
+                                            </div>
+                                            <div class="col-md-5 btn-group btn-group-sm align-self-start">
+                                                <button class="btn btn-primary px-1" onclick="reorder('${encodeURIComponent(JSON.stringify(idsAndQuantities))}', '${cartId}', '${cartMenu}');">Reorder</button>
+                                                <button class="btn btn-secondary px-1" onclick="printPosReceipt(${orderDetails.order_id}, this)">Print</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                            fullHtml += accordionItem;
+                        }
+
+                        fullHtml += `
+                                </div>
+                            </div>`;
+                    } else {
+                        fullHtml += `
+                            <div class="col-md-5">
+                                <div class="alert alert-info">No previous orders found</div>
+                            </div>`;
+                    }
+                    fullHtml += `
+                        <div class="col-md-7">
+                            <div class="simple-keyboard"></div>
+                        </div>
+                    </div>`;
+                const footer = `
+                    <div class="col-12 ps-2">
+                        <button class="btn btn-danger w-100" type="button" data-bs-dismiss="modal">Close</button>
+                    </div>
+                `;
+
+                updateModal("Customer orders", fullHtml, footer);
+                openModal();
+                // setTimeout(() => {
+                //     const keyboard = createSimpleKeyboard({
+                //         inputIds: ['currentCustomerName', 'currentCustomerPhone', 'currentCustomerPostcode', 'currentCustomerAddress'],
+                //         maxLength: 20
+                //     });
+                // }, 200);
+            })
+            .catch(error => console.error(error));
+    }
+
+    function reorder(reorderItems, cartId, cartMenu) {
+        const decodedReorderItems = JSON.parse(decodeURIComponent(reorderItems));
+        const requestBody = {
+            reorderItems: decodedReorderItems,
+            cartId: cartId,
+            cartMenu: cartMenu
+        };
+        fetch('/reorder', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Failed to reorder. Status code: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            fetchAndDisplayCartItems(cartId);
+            closeModal();
+        })
+        .catch(error => console.error('Reorder failed:', error));
+    }
+
+    function showCartNote(cartId) {
+        fetch(`/note/${cartId}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch note. Status code: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                const noteModalBody = `
+                    <div class="row">
+                        <div class="col-md-4">
+                            <label for="orderNote" class="form-label">Add a note for this order</label>
+                            <textarea class="form-control" id="orderNote" style="resize:none">${data.note}</textarea>
+                        </div>
+                        <div class="col-md-8">
+                            <div class="simple-keyboard"></div>
+                        </div>
+                    </div>
+                    `;
+                const footer = `
+                    <div class="col-12 ps-2">
+                        <button class="btn btn-success w-100" type="button" onclick="saveOrderNote(${cartId}, this)">Save</button>
+                    </div>
+                `;
+
+                updateModal("Order note", noteModalBody, footer);
+                openModal();
+                setTimeout(() => {
+                    const keyboard = createSimpleKeyboard({
+                        inputIds: ['orderNote'],
+                        maxLength: 20
+                    });
+                }, 200);
+            })
+            .catch(error => console.error(error));
+    }
+
+    function saveOrderNote(cartId, button) {
+        disableButtonWithSpinner(button);
+        const note = document.getElementById('orderNote').value;
+        fetch(`/note/${cartId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ note: note }),
+        })
+        .then(response => {
+            if (!response.ok) {
+                enableButtonRemoveSpinner(button);
+                throw new Error(`Failed to save note. Status code: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            enableButtonRemoveSpinner(button);
+            closeModal();
+        })
+        .catch(error => console.error(error));
+    }
+
+    function printPosReceipt(cartId, button, status="") {
+        disableButtonWithSpinner(button);
+        return fetch(`/print/${cartId}/${status}`)
+            .then((response) => {
+                if (response.ok) {
+                    return response.json();
+                }
+                else {
+                    throw new Error('Failed to fetch cart items.');
+                }
+            })
+            .then((data) => {
+                enableButtonRemoveSpinner(button);
+                return data;
+            })
+            .catch((error) => {
+                enableButtonRemoveSpinner(button);
+                console.error('Error: ', error);
+                throw error;
+            });
+    }
+
+    function printKitchenReceipt(cartId, button, status="") {
+        disableButtonWithSpinner(button);
+        return fetch(`/send_to_sections/${cartId}/${status}`)
+            .then((response) => {
+                if (response.ok) {
+                    return response.json();
+                }
+                else {
+                    throw new Error('Failed to fetch cart items.');
+                }
+            })
+            .then((data) => {
+                enableButtonRemoveSpinner(button);
+                return data;
+            })
+            .catch((error) => {
+                enableButtonRemoveSpinner(button);
+                console.error('Error: ', error);
+                throw error;
+            });
+    }
+
+    function adjustQuantity(action) {
+        const qtyInput = document.getElementById("qtyInput");
+        let currentValue = parseInt(qtyInput.value);
+
+        if (!isNaN(currentValue)) {
+            if (action === 'minus') {
+                currentValue = Math.max(currentValue - 1, 1);
+            } else if (action === 'plus') {
+                currentValue++;
+            }
+        }
+
+        qtyInput.value = currentValue;
+    }
+
+    function removeItem(cartId, cartItemID, inModal) {
+        playSoundFile("delete.mp3");
+        fetch(`/delete_item/${cartItemID}`, {
+            method: 'DELETE'
+        })
+        .then(response => {
+            if (response.ok) {
+                fetchAndDisplayCartItems(cartId);
+                if(inModal) {
+                    closeModal();
+                }
+            } else {
+                console.error('Failed to remove item');
+            }
+        })
+        .catch(error => {
+            console.error('Error deleting item:', error);
+        });
+    }
+
+    function showCartModifiers(cartProductId, productName, quantity, productPrice, options) {
+        const badge = decodeURIComponent(options);
+        const cartId = getCurrentCartId();
+        fetch('/get_mods')
+            .then(response => response.json())
+            .then(data => {
+                const modifiersHTML = data.length > 0 
+                    ? data.map(modifier => `
+                        <div class="col-auto mb-1 pe-0">
+                            <input type="checkbox" class="btn-check mods-checkbox" id="btn-check-${modifier[0]}" autocomplete="off" value="${modifier[1]}">
+                            <label class="btn btn-outline-success btn-sm rounded-0 text-dark" for="btn-check-${modifier[0]}">
+                                ${modifier[1]}
+                            </label>
+                        </div>`).join('')
+                    : `<div class="col-auto">No modifier presets added</div>`;
+
+                const productInfo = `
+                    <div class="row">
+                        <div class="col-3">
+                            <div class="input-group mb-3">
+                                <button class="btn btn-primary btn-sm rounded-0" type="button" id="qty-minus" onclick="adjustQuantity('minus')"><span class="bi-dash"></span></button>
+                                <input type="text" id="qtyInput" class="form-control form-control-sm text-center" value="${quantity}" readonly>
+                                <button class="btn btn-primary btn-sm rounded-0" type="button" id="qty-plus" onclick="adjustQuantity('plus')"><span class="bi-plus"></span></button>
+                            </div>
+                        </div>
+                        <div class="col-9">
+                            <button class="btn btn-danger btn-sm rounded-0 float-end" type="button" id="itemRemove" onclick="removeItem('${cartId}', '${cartProductId}', 'true')"><span class="bi-trash"></span> Remove Item</button>
+                        </div>
+                        <hr>
+                        <div class="col-md-6 row my-3" id="modifiers">
+                            ${modifiersHTML}
+                        </div>
+                        <div class="col-md-6">
+                            <label for="itemNote" class="form-label">Note for this item</label>
+                            <textarea class="form-control" id="itemNote" style="resize:none"></textarea>
+                        </div>
+                        ${badge === "" ? '' : `<p>${badge}</p>`}
+                        <div class="col-md-12 mt-3">
+                            <div class="simple-keyboard"></div>
+                        </div>
+                    </div>
+                    `;
+
+                const footer = `
+                        <div class="col-12 ps-2">
+                            <button class="btn btn-success w-100" type="button" id="saveCartItemMods" onclick="saveCartItemMods(${cartProductId});">Save</button>
+                        </div>
+                `;
+
+                updateModal(productName + " £" + parseFloat(productPrice).toFixed(2), productInfo, footer);
+                openModal();
+                setTimeout(() => {
+                    const keyboard = createSimpleKeyboard({
+                        inputIds: ['itemNote'],
+                        maxLength: 20
+                    });
+                }, 200);
+            })
+            .catch(error => {
+                console.error('Error fetching data:', error);
+            });
+    }
+
+    function saveCartItemMods(cartItemId) {
+        const selectedCheckboxes = Array.from(document.querySelectorAll('input.mods-checkbox:checked'))
+            .map(checkbox => checkbox.value);
+        const textBoxValue = document.getElementById('itemNote').value;
+        const quantityValue = document.getElementById('qtyInput').value;
+        
+        const data = {
+            cartItemId: cartItemId,
+            mods: selectedCheckboxes,
+            modsText: textBoxValue,
+            quantity: quantityValue
+        };
+        
+        fetch('/update_modifier', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        })
+        .then(response => {
+            // Check if response is OK (status 200-299)
+            if (!response.ok) {
+                // Parse the error message from the response
+                return response.json().then(errorData => {
+                    throw new Error(errorData.error || 'Error updating item');
+                });
+            }
+            return response.json();
+        })
+        .then(data => {
+            // Success - refresh cart and close modal
+            showToast(data.message || 'Item updated successfully', true);
+            fetchAndDisplayCartItems(getCurrentCartId());
+            closeModal();
+        })
+        .catch(error => {
+            // Show error to user
+            console.error('Error:', error);
+            showToast(error.message, false);
+            // Don't close modal so user can adjust quantity
+        });
+    }
+
+    function deleteCart(cartId) {        
+        fetch(`/delete_cart/${cartId}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(data => {
+            resetCheckoutTotals();
+        })
+        .catch(error => {
+            // Handle error
+            console.error('Error:', error);
+        });
+    }
+
+    function openCashDrawer(button) {
+        disableButtonWithSpinner(button);
+        fetch(`/open_cash_drawer`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                enableButtonRemoveSpinner(button);
+        })
+        .catch(error => {
+                console.error('Error:', error);
+            });
+    }
+
+    async function createMiscItem(button) {
+        if (!getCurrentCartMenu()) {
+            fetchPosMethods();
+            return;
+        }
+        
+        disableButtonWithSpinner(button);
+        
+        try {
+            // Fetch misc presets
+            const response = await fetch('/get_misc_presets');
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const presets = await response.json();
+            
+            const body = `
+            <div class="row g-2">
+                <div class="col-md-6">
+                    <label for="itemName" class="form-label small">Name (optional)</label>
+                    <input type="text" class="form-control form-control-sm" id="itemName" placeholder="e.g. custom item" autocomplete="off">
+                </div>
+                <div class="col-md-3">
+                    <label for="itemPrice" class="form-label small">Price</label>
+                    <input type="text" class="form-control form-control-sm" id="itemPrice" inputmode="decimal" placeholder="0.00" readonly>
+                </div>
+                <div class="col-md-3">
+                    <label for="miscVatable" class="form-label small">Vatable</label>
+                    <select class="form-select form-select-sm" id="miscVatable">
+                        <option value="0" selected>No</option>
+                        <option value="1">Yes</option>
+                    </select>
+                </div>
+                
+                <div class="col-4 mt-2 p-0">
+                    <div id="miscPresetsGrid" class="d-flex flex-wrap"></div>
+                    <div id="miscItemMsg" class="text-danger small"></div>
+                </div>
+                <div class="col-8 mt-2">
+                    <div class="simple-keyboard"></div>
+                </div>
+            </div>`;
+            
+            updateModal("Create Miscellaneous Item", body, `
+                <button class="btn btn-success w-100" type="button" onclick="processMiscItem()">
+                    <i class="bi bi-save me-1"></i> Save
+                </button>
+            `);
+            
+            openModal();
+            renderMiscPresets(presets);
+            
+        } catch (error) {
+            console.error("Error loading misc presets:", error);
+            const msgElement = document.getElementById('miscItemMsg');
+            if (msgElement) {
+                msgElement.textContent = "Failed to load presets";
+            }
+        } finally {
+            enableButtonRemoveSpinner(button);
+        }
+
+        // set time out to allow the modal to open
+        setTimeout(() => {
+            const Keyboard = window.SimpleKeyboard.default;
+
+            // Track the active input field and keyboard mode
+            let activeInput = "itemPrice"; // Default to price field
+            let keyboardMode = "numeric"; // Default to numeric keypad
+
+            // Keyboard layouts
+            const numericLayout = {
+                default: ["7 8 9", "4 5 6", "1 2 3", "0 . {bksp}", "{alpha}"]
+            };
+
+            const alphaLayout = {
+                default: [
+                    "q w e r t y u i o p",
+                    "a s d f g h j k l",
+                    "{shift} z x c v b n m {bksp}",
+                    "{numeric} {space}"
+                ],
+                shift: [
+                    "Q W E R T Y U I O P",
+                    "A S D F G H J K L",
+                    "{shift} Z X C V B N M {bksp}",
+                    "{numeric} {space}"
+                ]
+            };
+
+            // Initialize keyboard with numeric layout
+            const myKeyboard = new Keyboard({
+                onChange: input => onChange(input),
+                onKeyPress: button => onKeyPress(button),
+                layout: numericLayout,
+                display: {
+                    "{alpha}": "ABC",
+                    "{numeric}": "123",
+                    "{shift}": "⇧",
+                    "{bksp}": "←",
+                    "{space}": "Space"
+                },
+                buttonTheme: [
+                    {
+                        class: "bg-danger text-light",
+                        buttons: "{bksp}"
+                    },
+                    {
+                        class: "bg-primary text-light",
+                        buttons: "{alpha} {numeric}"
+                    }
+                ]
+            });
+
+            // Handle input changes
+            function onChange(input) {
+                if (activeInput === "itemPrice" && input.length > 6) {
+                    // Trim input to 5 characters
+                    input = input.substring(0, 6);
+                    // Update keyboard's internal input value
+                    myKeyboard.setInput(input);
+                }
+                document.getElementById(activeInput).value = input;
+                console.log("Input changed", input);
+            }
+
+            // Handle button presses
+            function onKeyPress(button) {
+                console.log("Button pressed", button);
+                
+                // Handle keyboard mode switching
+                if (button === "{alpha}") {
+                    switchToAlpha();
+                } else if (button === "{numeric}") {
+                    switchToNumeric();
+                } else if (button === "{shift}") {
+                    myKeyboard.setOptions({
+                        layoutName: myKeyboard.options.layoutName === "default" ? "shift" : "default"
+                    });
+                }
+            }
+
+            // Switch to alphanumeric keyboard
+            function switchToAlpha() {
+                keyboardMode = "alpha";
+                myKeyboard.setOptions({
+                    layout: alphaLayout,
+                    layoutName: "default"
+                });
+                
+                // Set focus to itemName field
+                document.getElementById("itemName").focus();
+                activeInput = "itemName";
+                myKeyboard.setInput(document.getElementById(activeInput).value);
+            }
+
+            // Switch to numeric keyboard
+            function switchToNumeric() {
+                keyboardMode = "numeric";
+                myKeyboard.setOptions({
+                    layout: numericLayout,
+                    layoutName: "default"
+                });
+                
+                // Set focus to itemPrice field
+                document.getElementById("itemPrice").focus();
+                activeInput = "itemPrice";
+                myKeyboard.setInput(document.getElementById(activeInput).value);
+            }
+        }, 100);
+    }
+
+    function renderMiscPresets(presets) {
+        const container = document.getElementById('miscPresetsGrid');
+        const commonPresets = [
+            1.00, 1.50, 2.00, 2.50, 
+            3.00, 5.00
+        ];
+        
+        // Combine API presets and common presets
+        const allPresets = [
+            ...(presets || []),
+            ...commonPresets.map(amount => [null, 'common', amount])
+        ];
+            
+        container.innerHTML = allPresets.map(preset => {
+            const amount = preset[2] || preset; // Handle both array and number formats
+            return `
+                <button class="btn btn-outline-primary btn-sm py-1 px-2 preset-btn m-1" 
+                        onclick="applyMiscPreset(${amount})">
+                    <small>£${amount.toFixed(2)}</small>
+                </button>
+            `;
+        }).join('');
+    }
+
+    function applyMiscPreset(amount) {
+        const priceInput = document.getElementById('itemPrice');
+        priceInput.value = parseFloat(amount).toFixed(2);
+        priceInput.dispatchEvent(new Event('change'));
+        document.getElementById('itemName').focus();
+    }
+
+    function processMiscItem() {
+        let itemName = document.getElementById("itemName").value;
+        const itemPrice = parseFloat(document.getElementById("itemPrice").value);
+        const miscVatable = document.getElementById('miscVatable').value;
+
+        if (isNaN(itemPrice)) {
+            document.getElementById("miscItemMsg").textContent = "Price must be a number.";
+            return;
+        }
+
+        if (itemName.trim() === "") {
+            itemName = "Misc Item";
+        }
+        itemId = generateUniqueInt();
+        addToCart(itemId, itemName, itemPrice, "null", 1, miscVatable);
+        closeModal();
+    }
+    
+    function fetch_payment_methods() {
+        return fetch(`/fetch_payment_methods`)
+        .then((response) => {
+            if (response.ok) {
+                return response.json();
+            } 
+            else {
+                throw new Error('Failed to fetch payment methods.');
+            }
+        })
+        .catch((error) => {
+            console.error('Error: ', error);
+            throw error;
+        });
+    }
+
+    function completeCheckout(cartId, discountedTotal, print, button) {
+        disableButtonWithSpinner(button);
+        const paymentMethod = getSelectedPaymentMethod().trim();
+        const balanceElement = document.getElementById('balance');
+        const currentBalance = parseFloat(balanceElement.textContent);
+        const balanceMsg = document.getElementById('balanceMsg');
+        const tendered = document.getElementById('tendered').innerText;
+        const changeDue = document.getElementById('changeDue').value;
+
+        let dataToSend = {
+            cartId,
+            paymentMethod,
+            discountedTotal,
+            print,
+        };
+
+        if (currentBalance > 0) {
+            balanceMsg.innerHTML = "<strong>Balance remains</strong>";
+            enableButtonRemoveSpinner(button);
+            return;
+        }
+        if (paymentMethod === "Split") {
+            if (splitCharges.length > 0 && currentBalance == 0) {
+                dataToSend.splitCharges = splitCharges;
+            } else {
+                document.getElementById('splitMessages').textContent = "Balance is still remaining.";
+                console.warn("Warning: splitCharges array is empty.", splitCharges);
+                enableButtonRemoveSpinner(button);
+                return;
+            }
+        }
+        if (paymentMethod === "Cash") {
+            dataToSend.tendered = tendered;
+            dataToSend.change = changeDue;
+        }
+        
+        fetch('/checkout', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(dataToSend),
+        })
+        .then(response => response.json())
+        .then(data => {
+            resetCheckoutTotals();
+            enableButtonRemoveSpinner(button);
+            closeModal();
+        })
+        .catch(error => {
+            enableButtonRemoveSpinner(button);
+            console.error('Error sending data to Flask route:', error);
+        });
+    }
+
+    // complete checkout with card payment
+    let modalHideHandler = null;
+    function completeCardCheckout(cartId, discountedTotal, print, cardType, button, isRetry = false) {
+        disableButtonWithSpinner(button);
+
+        let dataToSend = { cartId, paymentMethod: cardType, discountedTotal, print };
+        let endpoint = cardType === "Card" ? "/checkout" : "/prepare_card_transaction";
+
+        // ── NEW: Teya never gets UI interference ──
+        // if (cardType === "Teya") {
+        //     // fire & forget (or handle as you like)
+        //     fetch(endpoint, {
+        //         method: 'POST',
+        //         headers: { 'Content-Type': 'application/json' },
+        //         body: JSON.stringify(dataToSend),
+        //     })
+        //     .then(res => res.json())
+        //     .then(data => {
+        //         if (data.status === "success") {
+        //             resetCheckoutTotals();
+        //             enableButtonRemoveSpinner(button);
+        //         } else {
+        //             //enableButtonRemoveSpinner(button);
+        //             showToast("Payment Failed: " + data.message, false, 0);
+        //         }
+        //     })
+        //     .catch(err => console.error("Teya error:", err));
+        //     enableButtonRemoveSpinner(button);
+        //     return; 
+        // }
+        // If it's NOT a stored card payment, process checkout normally
+        if (cardType == "Card") {
+            fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(dataToSend),
+            })
+            .then(response => response.json())
+            .then(data => {
+                resetCheckoutTotals();
+                enableButtonRemoveSpinner(button);
+            })
+            .catch(error => {
+                enableButtonRemoveSpinner(button);
+                console.error('Error sending data to Flask route:', error);
+            });
+            return;
+        }
+
+        // If this is the first attempt, open the modal
+        if (!isRetry) {
+            updateModal("Pay with Card", `
+                <div class="text-center">
+                    <i class="bi bi-tablet-landscape fs-1"></i>
+                    <div class="alert alert-primary fs-3" role="alert" id="cardModalMsg">
+                        Present card reader to customer...<br>
+                        <small>Do not close until transaction has completed or failed</small>
+                    </div>
+                    <div class="spinner-border text-info fs-2" role="status" id="cardSpinner"></div>
+                    <div id="retryButtonContainer" class="my-2 d-grid gap-2 d-md-block"></div>
+                    
+                    <button class="btn btn-danger btn mb-2 visually-hidden" id="terminalCancelButton" onclick="cancelCardTransaction()">
+                    <span id="terminalButtonText">Cancel</span>
+                        <div id="terminalButtonSpinner" class="spinner-grow spinner-grow-sm text-light visually-hidden" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </button>
+                </div>
+            `, "", 'modal-md');
+            openModal();
+            setTimeout(() => {
+                const cancelButton = document.getElementById('terminalCancelButton');
+                if (cancelButton) {
+                    cancelButton.classList.remove('visually-hidden');
+                }
+            }, 4000);
+        } else {
+            document.getElementById('cardModalMsg').innerHTML = `Present reader to customer...<br>
+                        <small>Do not close until transaction has completed or failed</small>`;
+            document.getElementById('cardSpinner').style.display = "inline-block";
+            document.getElementById('retryButtonContainer').innerHTML = "";
+            const cancelButtonTwo = document.getElementById('terminalCancelButton');
+
+            setTimeout(() => {
+                const terminalButtonText = document.getElementById('terminalButtonText');
+                const spinner = document.getElementById('terminalButtonSpinner');
+                
+                cancelButtonTwo.style.display = "inline-block";
+                cancelButtonTwo.disabled = false;
+                terminalButtonText.classList.remove('visually-hidden');
+                spinner.classList.add('visually-hidden');
+            }, 4000);
+        }
+
+        // to cancel transaction when modal is closed
+        const modal = document.getElementById('myModal');
+        // 1. First remove any existing listener
+        if (modalHideHandler) {
+            modal.removeEventListener('hide.bs.modal', modalHideHandler);
+        }
+        // 2. Create new handler
+        modalHideHandler = function() {
+            cancelCardTransaction();
+            modal.removeEventListener('hide.bs.modal', modalHideHandler); // Cleanup
+        };
+        // 3. Add the new listener
+        modal.addEventListener('hide.bs.modal', modalHideHandler);
+
+        fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(dataToSend),
+        })
+        .then(response => response.json())
+        .then(data => {
+            // todo: only allow selection of one card type
+            let cardMsgModal = document.getElementById('cardModalMsg');
+            let cardSpinner = document.getElementById('cardSpinner');
+            let retryButtonContainer = document.getElementById('retryButtonContainer');
+            let cancelButtonThree = document.getElementById('terminalCancelButton');
+            console.log(data);
+            if (cardMsgModal) {
+                let originalMessage = data.message;
+                
+                // Change alert class based on status
+                let alertClass = data.status === "success" ? "alert alert-success fs-3" : "alert alert-warning fs-3";
+                cardMsgModal.className = alertClass;
+                cardMsgModal.innerHTML = originalMessage;
+
+                if (data.status === "success") {
+                    cardSpinner.style.display = "none";
+                    retryButtonContainer.innerHTML = "";
+                    cancelButtonThree.style.display = "none"; // Hide cancel button
+                    resetCheckoutTotals(); // clear early to avoid clearing new cart created after success
+                    enableButtonRemoveSpinner(button);
+                    let countDown = 3;
+                    let countDownInterval = setInterval(() => {
+                        cardMsgModal.innerHTML = `<i class="bi-check-circle text-info fs-3"></i> ${originalMessage} <br> Closing in ${countDown}...`;
+                        countDown--;
+                        if (countDown < 0) {
+                            clearInterval(countDownInterval);
+                            closeModal();
+                        }
+                    }, 1000); 
+                } else {
+                    // Payment failed - Show "Pay Again" button
+                    cardMsgModal.innerHTML = `<i class="bi-x-circle text-danger fs-3"></i> ${originalMessage}`;
+                    console.log("status", data.status);
+                    console.log("message", data.message);
+                    if (data.status == "error") {
+                        cancelCardTransaction(data.message);
+                    } 
+                    cardSpinner.style.display = "none";
+                    retryButtonContainer.innerHTML = `
+                        <button class="btn btn-warning btn-lg" onclick="completeCardCheckout('${cartId}', '${discountedTotal}', '${print}', '${cardType}', this, true)">
+                            Try Again?
+                        </button>
+                        <button class="btn btn-info btn-lg" data-bs-dismiss="modal">
+                            Close
+                        </button>
+                    `;
+                    
+                }
+            } else {
+                console.error("Element #cardModalMsg not found");
+            }
+
+            enableButtonRemoveSpinner(button);
+        })
+        .catch(error => {
+            enableButtonRemoveSpinner(button);
+            console.error('Error sending data to Flask route:', error);
+        });
+    }
+
+    function cancelCardTransaction(message="") {
+        const button = document.getElementById('terminalCancelButton');
+        const terminalButtonText = document.getElementById('terminalButtonText');
+        const spinner = document.getElementById('terminalButtonSpinner');
+
+        // Disable button and show spinner
+        button.disabled = true;
+        terminalButtonText.classList.add('visually-hidden');
+        spinner.classList.remove('visually-hidden');
+
+        fetch('/cancel_card_transaction', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log(data);
+            document.getElementById('cardModalMsg').innerHTML = message || "Trying to abort transaction...";
+            button.style.display = 'none';
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            // Re-enable button on error
+            button.disabled = false;
+            terminalButtonText.classList.remove('visually-hidden');
+            spinner.classList.add('visually-hidden');
+        });
+        }
+
+    function hideAllCustomerInputFields() {
+        document.getElementById("inputsForAll").style.display = "none";
+        document.getElementById("inputsForDelivery").style.display = "none";
+    }
+
+    function showAllCustomerInputFields() {
+        document.getElementById("inputsForAll").style.display = "flex";
+        document.getElementById("inputsForDelivery").style.display = "flex";
+        document.getElementById('postcodeSearch').disabled = false;
+    }
+
+    function showAllCustomerInputExceptDeliveryFields() {
+        document.getElementById("inputsForAll").style.display = "flex";
+        document.getElementById("inputsForDelivery").style.display = "none";
+        document.getElementById('postcodeSearch').disabled = true;
+    }
+
+    function updateCustomerDetails(cartId) {
+        const customerDetails = {
+            name: document.getElementById('currentCustomerName').value,
+            phone: document.getElementById('currentCustomerPhone').value,
+            postcode: document.getElementById('currentCustomerPostcode').value,
+            address: document.getElementById('currentCustomerAddress').value,
+            addressId: document.getElementById('currentAddressId').value,
+            customerId: document.getElementById('currentCustomerId').value
+        };
+
+        const updateMsg = document.getElementById('updateMsg');
+
+        fetch('/update_customer_details', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(customerDetails)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                updateMsg.innerHTML = `<div class="alert alert-success alert-dismissible fade show" role="alert">Customer updated.
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>`;
+                    fetchCartData(cartId)
+            } else {
+                updateMsg.innerHTML = `<div class="alert alert-danger alert-dismissible fade show" role="alert">There was an error.
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>`;
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+        });
+    }
+
+    function getRecentCarts(button) {
+        disableButtonWithSpinner(button);
+        const offcanvasEl = document.getElementById('lastOrdersCanvas');
+        const accordion = document.getElementById('lastOrdersAccordion');
+        const offcanvas = new bootstrap.Offcanvas(offcanvasEl);
+
+        fetch('/get_recent_orders')
+            .then(res => {
+            if (!res.ok) throw new Error('Failed to fetch');
+            return res.json();
+            })
+            .then(data => {
+            accordion.innerHTML = '';
+            if (!data.length) {
+                accordion.innerHTML = `
+                <div class="alert alert-secondary mb-0">No recent orders</div>
+                `;
+            } else {
+                data.forEach(order => {
+                const cartId    = order.cart_id;
+                const headerId  = `heading${cartId}`;
+                const collapseId = `collapse${cartId}`;
+                const timeLabel = moment(order.order_date).format('HH:mm ddd Do');
+                const orderTypeClass = {
+                    dine:    'text-bg-success',
+                    delivery:'text-bg-warning',
+                    waiting: 'text-bg-info',
+                    takeaway:'text-bg-info',
+                    sale: 'text-bg-primary'
+                }[order.order_type] || 'text-bg-secondary';
+
+                accordion.innerHTML += `
+                    <div class="accordion-item">
+                    <h2 class="accordion-header d-flex align-items-center justify-content-between" id="${headerId}">
+                        
+                        <!-- Toggle button -->
+                        <button
+                        class="accordion-button collapsed flex-grow-1 text-start d-flex align-items-center gap-1"
+                        type="button"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#${collapseId}"
+                        aria-expanded="false"
+                        aria-controls="${collapseId}"
+                        onclick="loadOrderDetails(${cartId}, this)"
+                        style="overflow: hidden;"
+                        >
+                        <span class="badge text-bg-secondary">#${cartId}</span>
+                        <span class="text-truncate">
+                            ${timeLabel}
+                        </span>
+                        <span class="badge ${orderTypeClass} text-nowrap">${order.order_type}</span>
+                        <span class="fw-bold ms-auto">£${order.total_payments.toFixed(2)}</span>
+                        </button>
+
+                        <!-- Print button on header -->
+                        <button
+                        class="btn btn-outline-secondary btn-sm me-1"
+                        type="button"
+                        onclick="printPosReceipt(${cartId}, this, 'reprint')"
+                        >
+                        <i class="bi-printer-fill"></i>
+                        </button>
+
+                    </h2>
+
+                    <div
+                        id="${collapseId}"
+                        class="accordion-collapse collapse"
+                        aria-labelledby="${headerId}"
+                        data-bs-parent="#lastOrdersAccordion"
+                    >
+                        <div class="accordion-body">
+                        <!-- details will be loaded here -->
+                        <div class="text-center text-muted">Loading…</div>
+                        </div>
+                    </div>
+                    </div>
+                `;
+                });
+            }
+            offcanvas.show();
+            enableButtonRemoveSpinner(button);
+            })
+            .catch(err => {
+            console.error(err);
+            enableButtonRemoveSpinner(button);
+            });
+    }
+
+    function processCartItems(data) {
+        if (typeof data !== 'string') data = JSON.stringify(data);
+        data = JSON.parse(data);
+
+        const processOptions = (options) => {
+            return options
+            .split(',')
+            .map(option => {
+                const [ , name, value ] = option.split('|');
+                return { name, value: parseFloat(value) || 0 };
+            });
+        };
+
+        const itemsHTML = data.items.map(item => {
+            let totalValue = (item.quantity * item.price).toFixed(2);
+            let optionNames = '';
+
+            if (item.options) {
+            const opts = processOptions(item.options);
+            const extras = opts.reduce((sum, o) => sum + o.value, 0);
+            totalValue = (item.quantity * item.price + extras).toFixed(2);
+            optionNames = opts.map(o => o.name).join(', ');
+            }
+
+            return `
+            <li class="list-group-item list-group-item-action">
+                ${item.quantity}x ${item.product_name}
+                <span class="float-end">£${totalValue}</span>
+                ${optionNames ? `<br><small class="text-muted">(${optionNames})</small>` : ''}
+            </li>
+            `;
+        });
+
+        return `<ul class="list-group mb-2">${itemsHTML.join('')}</ul>`;
+    }
+
+    function loadOrderDetails(cartId, btn) {
+        const collapseEl = document.getElementById(`collapse${cartId}`);
+        const body      = collapseEl.querySelector('.accordion-body');
+        body.innerHTML = `<div class="text-center text-muted">Loading…</div>`;
+
+        fetch(`/order_details/${cartId}`)
+            .then(res => {
+            if (!res.ok) throw new Error('Status ' + res.status);
+            return res.json();
+            })
+            .then(data => {
+            const html = processCartItems(data);
+            body.innerHTML = html;
+            })
+            .catch(err => {
+            console.error('Error loading details for', cartId, err);
+            body.innerHTML = `<div class="text-danger">Failed to load details</div>`;
+            });
+    }
+
+    function filterMenu(slug, btn) {
+        var catBtns = document.querySelectorAll('#categories .category-btn');
+
+        for (var i = 0; i < catBtns.length; i++) {
+            var menus = catBtns[i].getAttribute('data-menus') || '';
+            var list = menus ? menus.split(',').map(function(s){ return s.trim(); }) : [];
+            var show = (slug === 'all') ? true : (list.indexOf(slug) > -1);
+
+            // find the nearest bootstrap column wrapper
+            var col = catBtns[i].closest('[class*="col-"]') || catBtns[i].parentElement;
+            if (col) col.classList.toggle('d-none', !show);
+        }
+
+        // Active state for filter buttons
+        if (btn) {
+            var bs = document.querySelectorAll('#menuFilters button');
+            for (var j = 0; j < bs.length; j++) bs[j].classList.remove('active');
+            btn.classList.add('active');
+        }
+    }
+
+    const currentCart = getCurrentCartId();
+    if (currentCart) {
+        fetchCartData(currentCart);
+    }
+    else {
+        resetCheckoutTotals();
+    }
+
+    const currentMenu = getCurrentCartMenu();
+    if (currentMenu) {
+        loadProductsForSelectedCategory(currentMenu);
+    }
+
+    function initCustomerSearch(modalSelector = '#myModal') {
+        const modal = document.querySelector(modalSelector);
+        if (!modal) return;
+
+        let debounceTimer = null;
+
+        modal.addEventListener('input', function(event) {
+            if (event.target.id !== 'customerSearch') return;
+
+            clearTimeout(debounceTimer);
+            const inputText = event.target.value.trim();
+
+            if (inputText.length < 3) {
+            document.getElementById('customerSuggestionsContainer').innerHTML = '';
+            return;
+            }
+
+            debounceTimer = setTimeout(() => {
+            fetch('/get_customer_info', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ searchText: inputText }),
+            })
+                .then(r => r.json())
+                .then(results => renderCustomerSuggestions(results))
+                .catch(err => console.error('Customer lookup error:', err));
+            }, 250);
+        });
+    }
+
+    function renderCustomerSuggestions(data) {
+        const container = document.getElementById('customerSuggestionsContainer');
+        container.innerHTML = '';
+
+        if (!Array.isArray(data) || data.length === 0) return;
+
+        let html = `<ul class="ps-0 mb-0">`;
+
+        html += `
+            <li class="list-group-item list-group-item-action" onclick="document.getElementById('customerSuggestionsContainer').innerHTML = '';" style="background-color:#dc3545;">
+            Close <i class="bi bi-x-circle-fill float-end"></i>
+            </li>
+        `;
+
+        data.forEach(item => {
+            const name = item.customer_name || '';
+            const phone = item.customer_telephone || '';
+            const address = item.address || '';
+            const postcode = item.postcode || '';
+            const customerId = item.customer_id || '';
+            const addressId = item.address_id || '';
+
+            if (!name && !phone && !address && !postcode) return;
+
+            const display = [name, phone, address, postcode].filter(Boolean).join(', ');
+
+            html += `
+            <li class="list-group-item list-group-item-action"
+                onclick="fillCustomerFromSuggestion('${escapeJS(name)}', '${escapeJS(phone)}', '${escapeJS(address)}', '${escapeJS(postcode)}', '${customerId}', '${addressId}')">
+                ${display}
+            </li>
+            `;
+        });
+
+        html += `</ul>`;
+        container.innerHTML = html;
+    }
+
+    function fillCustomerFromSuggestion(name, phone, address, postcode, customerId, addressId) {
+        const nameEl = document.getElementById('customerName');
+        const phoneEl = document.getElementById('customerPhone');
+        const addressEl = document.getElementById('customerAddress');
+        const postcodeEl = document.getElementById('customerPostcode');
+        const customerIdEl = document.getElementById('customerId');
+        const addressIdEl = document.getElementById('addressId');
+        const container = document.getElementById('customerSuggestionsContainer');
+
+        if (nameEl) nameEl.value = name;
+        if (phoneEl) phoneEl.value = phone;
+        if (addressEl) addressEl.value = address;
+        if (postcodeEl) postcodeEl.value = postcode;
+        if (customerIdEl) customerIdEl.value = customerId;
+        if (addressIdEl) addressIdEl.value = addressId;
+        if (container) container.innerHTML = '';
+        document.getElementById('customerSearch').value = '';
+    }
+
+    function escapeJS(str) {
+        return String(str || '').replace(/'/g, "\\'").replace(/\n/g, ' ');
+    }
+
+    let postcodeTimeout = null;
+
+    function initPostcodeSearch(modalSelector = '#myModal') {
+        const modal = document.querySelector(modalSelector);
+        if (!modal) return;
+
+        let postcodeTimeout = null;
+
+        modal.addEventListener('input', function(event) {
+            if (event.target.id !== 'postcodeSearch') return;
+
+            clearTimeout(postcodeTimeout);
+            const query = event.target.value.trim();
+
+            if (query.length < 3) {
+            document.getElementById('suggestionsContainer').innerHTML = '';
+            return;
+            }
+
+            postcodeTimeout = setTimeout(() => {
+            fetch('/get_postcode_info', {
+                method: 'POST',
+                headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `ps=${encodeURIComponent(query)}`
+            })
+                .then(r => r.json())
+                .then(data => {
+                renderPostcodeSuggestions(data);
+                })
+                .catch(err => console.error('Postcode lookup error:', err));
+            }, 300);
+        });
+    }
+
+    function renderPostcodeSuggestions(data) {
+        const container = document.getElementById('suggestionsContainer');
+        container.innerHTML = '';
+
+        if (!data?.Items || !Array.isArray(data.Items)) return;
+
+        const addresses = data.Items.filter(item => item.Type === 'Address');
+        if (addresses.length === 0) return;
+
+        let html = `<ul class="ps-0 mb-0">`;
+
+        html += `
+            <li class="list-group-item list-group-item-action"
+                onclick="document.getElementById('suggestionsContainer').innerHTML = '';" style="background-color:#dc3545;">
+            Close <i class="bi bi-x-circle-fill float-end"></i>
+            </li>
+        `;
+
+        addresses.forEach(addr => {
+            const fullText = `${addr.Text} ${addr.Description}`;
+            const addressEncoded = encodeURIComponent(addr.Text);
+            const postcodeEncoded = encodeURIComponent(addr.Description);
+
+            html += `
+            <li class="list-group-item list-group-item-action"
+                onclick="fillPostcodeAddress(
+                    decodeURIComponent('${addressEncoded}'),
+                    decodeURIComponent('${postcodeEncoded}')
+                )">
+                ${fullText}
+            </li>
+            `;
+        });
+
+        html += `</ul>`;
+        container.innerHTML = html;
+    }
+
+    function fillPostcodeAddress(address, postcode) {
+        const addressEl = document.getElementById('customerAddress');
+        const postcodeEl = document.getElementById('customerPostcode');
+        const container = document.getElementById('suggestionsContainer');
+        if (addressEl) addressEl.value = address;
+        if (postcodeEl) postcodeEl.value = postcode;
+        if (container) container.innerHTML = '';
+        document.getElementById('postcodeSearch').value = '';
+        getDeliveryPrice();
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        initializeSoundSetting();
+        var categoryButtons = document.querySelectorAll('.category-btn');
+        categoryButtons.forEach(function(button) {
+            button.addEventListener('click', function() {
+                playSoundFile("stop.mp3");
+                var categoryId = this.getAttribute('data-category-id');
+                var categoryColour = this.getAttribute('data-category-colour');
+                var categoryTextColour = this.getAttribute('data-category-text-colour');
+                var currentMenu = getCurrentCartMenu();
+                loadProducts(categoryId, currentMenu, categoryColour, categoryTextColour);
+            });
+        });
+    });
+
+    // Global barcode listener
+    let barcodeBuffer = '';
+    let lastKeyTime = 0;
+    let resetTimer = null;
+
+    document.addEventListener('keydown', (e) => {
+        // Ignore inputs / textareas
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+            return;
+        }
+
+        const now = Date.now();
+        const delta = now - lastKeyTime;
+        lastKeyTime = now;
+
+        // If too slow, assume typing → reset
+        if (delta > 400) {
+            barcodeBuffer = '';
+        }
+
+        // 🔚 Scan terminators
+        const isEnter = e.key === 'Enter';
+        const isTab   = e.key === 'Tab';
+        const isCtrlC = e.ctrlKey && e.key.toLowerCase() === 'c';
+
+        if (isEnter || isTab || isCtrlC) {
+            if (barcodeBuffer.length >= 4) {
+                handleBarcodeScan(barcodeBuffer);
+            }
+            barcodeBuffer = '';
+            return;
+        }
+
+        // Ignore control keys
+        if (e.key.length !== 1) return;
+
+        barcodeBuffer += e.key;
+
+        clearTimeout(resetTimer);
+        resetTimer = setTimeout(() => {
+            barcodeBuffer = '';
+        }, 500);
+    });
+
+
+    function handleBarcodeScan(barcode) {
+        console.log('Barcode scanned:', barcode);
+    
+        fetch('/lookup_barcode', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({barcode: barcode})
+        })
+        .then(response => {
+            // Parse JSON regardless of status code
+            return response.json().then(data => ({
+                ok: response.ok,
+                data: data
+            }));
+        })
+        .then(({ok, data}) => {
+            if (ok && data.found) {
+                addToCart(
+                    data.productId,
+                    data.productName,
+                    data.formattedPrice,
+                    data.options,
+                    data.categoryOrder,
+                    data.vatable
+                );
+                showToast('Product Added', true);
+            } else {
+                // Get the message from the response (e.g., "Product is out of stock")
+                showToast(data.message || 'Product not found', false);
+            }
+        })
+        .catch(error => {
+            console.error('Barcode lookup error:', error);
+            showToast('Error looking up product', false);
+        });
+    }
+</script>
+{% endblock %}
