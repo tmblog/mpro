@@ -17,7 +17,6 @@ pound_sign = '£' if int(pound_on) else ''
 def ceil_penny(val):
     return Decimal(val).quantize(Decimal('0.01'), rounding=ROUND_CEILING)
 
-
 # duplcated in helpers.py
 def calculate_cart_discounts(discount_amount, discount_type, amount_to_discount):
     # used for items and total price
@@ -122,13 +121,6 @@ def print_escpos_receipt(customer, items, status, tendered=None, change=None):
         header_text = receipt.get('header_text', "")
         footer_text = receipt.get('footer_text', "")
 
-        """
-        settings defaults 
-        48 for font a 1,1
-        48 for font a 1,2 (largest)
-        32 for font b 2,1
-        64 for font b 1,1 (smallest)
-        """
         column_width = escpos.get("width", 48)
         font = escpos.get("font_style", "a")
         custom_size = True
@@ -137,10 +129,9 @@ def print_escpos_receipt(customer, items, status, tendered=None, change=None):
 
         # Initialize printer
         printer = Win32Raw()
-        # printer = Dummy()  # for testing
         printer.open()
         
-        # arguments for kitchen receipt
+        # Arguments for kitchen receipt
         customer_dict = customer
         item_dict = items
 
@@ -152,7 +143,7 @@ def print_escpos_receipt(customer, items, status, tendered=None, change=None):
         # Extract variables
         cart_id = customer['cart_id']
         cart_discount = float(cart_data.get('cart_discount', 0) or 0)
-        cart_discount_type = cart_data.get('cart_discount_type')  # 'fixed' or 'percentage'
+        cart_discount_type = cart_data.get('cart_discount_type')
         cart_service_charge = float(cart_data.get('cart_service_charge', 0) or 0)
         cart_note = cart_data.get('overall_note', "")
         employee_name = customer['employee_name']
@@ -165,7 +156,8 @@ def print_escpos_receipt(customer, items, status, tendered=None, change=None):
         
         if customer['order_type'] in ['dine', 'delivery']:
             customer_info += (
-                ("\nTABLE: " + str(customer['table_number']) + "   COVERS: " + str(customer['table_cover']) 
+                ("\nTABLE: " + str(customer.get('table_display') or customer.get('table_number', '')) + 
+                 "   GUESTS: " + str(customer.get('total_covers') or customer.get('table_cover', ''))
                 if customer['order_type'] == "dine" else "") +
                 (("\n" + customer['address']) if customer['order_type'] == "delivery" and customer['address'] else "") +
                 (("\n" + customer['postcode']) if customer['order_type'] == "delivery" and customer['postcode'] else "")
@@ -180,7 +172,19 @@ def print_escpos_receipt(customer, items, status, tendered=None, change=None):
         # Header (centered)
         if status == "completed" or status == "reprint":
             printer.set(align='center')
-            printer.text(f"{header_text}\n")
+            if header_text:
+                header_lines = header_text.split('\n')
+                # First line (store name) - bigger
+                printer.set(align='center', bold=True, width=2, height=2, custom_size=True)
+                printer.text(f"{header_lines[0]}\n")
+
+                # Small gap - print empty line at smaller height
+                printer.set(height=1, width=1, custom_size=True)
+                printer.text("\n")
+                # Rest of header - normal size
+                if len(header_lines) > 1:
+                    printer.set(align='center', bold=False, width=font_width, height=font_height, custom_size=custom_size)
+                    printer.text('\n'.join(header_lines[1:]) + "\n")
             printer.text("." * column_width + "\n")
         
         # Order info
@@ -197,13 +201,37 @@ def print_escpos_receipt(customer, items, status, tendered=None, change=None):
         printer.text(f"{customer_info}\n")
         printer.text("." * column_width + "\n\n")
         printer.set(align='left', bold=False)
-        # Items
-        total_price = 0.0                 # subtotal after per-item discounts
-        discountable_subtotal = 0.0       # only items where cpn == 1/True
+        
+        # ============================================
+        # ITEMS - Sorted by print_group with separators
+        # ============================================
+        
+        # Get print groups and sort items
+        print_groups = posdb.get_category_print_groups()
+        item_list_sorted = sorted(item_list, key=lambda x: (
+            print_groups.get(x.get('category_id'), 1),
+            x.get('category_order', 999),
+            x.get('product_name', '')
+        ))
+        
+        total_price = 0.0
+        discountable_subtotal = 0.0
         total_items = 0
         total_item_discount = 0.0
+        last_group = None
 
-        for item in item_list:
+        for item in item_list_sorted:
+            # --- Print group separator ---
+            current_group = print_groups.get(item.get('category_id'), 1)
+            
+            if last_group == 0 and current_group > 0:
+                printer.text("_" * column_width + "\n\n")
+            elif last_group == 1 and current_group == 2:
+                printer.text("_" * column_width + "\n\n")
+            
+            last_group = current_group
+            # --- End separator logic ---
+            
             product = item.get('product_name')
             quantity = int(item.get('quantity') or 0)
             base_price = float(item.get('price') or 0.0)
@@ -292,7 +320,7 @@ def print_escpos_receipt(customer, items, status, tendered=None, change=None):
         # Service AFTER discount
         if customer['order_type'] == "dine":
             service_amount = (display_total_after_discount * cart_service_charge) / 100.0
-            service_label = "SERVICE CHARGE"
+            service_label = f"SERVICE ({cart_service_charge:.0f}%)"
         else:
             service_amount = cart_service_charge
             service_label = "DELIVERY CHARGE"
@@ -336,8 +364,8 @@ def print_escpos_receipt(customer, items, status, tendered=None, change=None):
         else:
             printer.set(align='center', bold=True)
             printer.text("No payment received\n\n")
-            # division hint
-            table_cover = customer.get('table_cover', 0)
+            # Division hint
+            table_cover = customer.get('total_covers') or customer.get('table_cover', 0)
             if (
                 customer.get('order_type') == "dine"
                 and division_hint
@@ -348,7 +376,7 @@ def print_escpos_receipt(customer, items, status, tendered=None, change=None):
                 per = ceil_penny(G / Decimal(cover))
 
                 lines = [f"{pound_sign}{G:.2f} / {cover} = {pound_sign}{per:.2f}"]
-                for m in range(2, min(cover, 4) + 1):  # 2 up to cover, capped at 5
+                for m in range(2, min(cover, 4) + 1):
                     group_amt = ceil_penny(G * Decimal(m) / Decimal(cover))
                     lines.append(f"{pound_sign}{per:.2f} * {m} = {pound_sign}{group_amt:.2f}")
 
@@ -356,6 +384,7 @@ def print_escpos_receipt(customer, items, status, tendered=None, change=None):
                 for line in lines:
                     printer.text(line + "\n")
                 printer.text("\n\n")
+        
         # Footer
         if status == "completed" or status == "reprint":
             printer.set(align='center')
@@ -368,9 +397,6 @@ def print_escpos_receipt(customer, items, status, tendered=None, change=None):
         printer.cut()
         printer.close()
 
-        # if receipt.get('kitchen_print') and status == "completed":
-        #     print_kitchen_receipt(customer_dict, item_dict)
-            
         return "printed"
     except Exception as e:
         print(f"Error printing receipt: {e}")
@@ -424,8 +450,9 @@ def print_kitchen_receipt(customer, items):
     
     if customer['order_type'] in ['dine', 'delivery']:
         customer_info += (
-            ("\nTABLE: " + str(customer['table_number']) + "   COVERS: " + str(customer['table_cover']) 
-             if customer['order_type'] == "dine" else "") +
+            ("\nTABLE: " + str(customer.get('table_display') or customer.get('table_number', '')) + 
+            "   GUESTS: " + str(customer.get('total_covers') or customer.get('table_cover', ''))
+            if customer['order_type'] == "dine" else "") +
             (("\n" + customer['address']) if customer['order_type'] == "delivery" and customer['address'] else "") +
             (("\n" + customer['postcode']) if customer['order_type'] == "delivery" and customer['postcode'] else "")
         )
@@ -915,12 +942,10 @@ def print_pos_totals(totals):
         traceback.print_exc()
         return "error"
     
-
 def get_database_connection():
     """Import here to avoid circular imports"""
     from pos import database as posdb
     return posdb.get_database_connection()
-
 
 def mark_section_printed(items_to_mark):
     """Update printed quantities for items after successful print"""
@@ -933,10 +958,10 @@ def mark_section_printed(items_to_mark):
     conn.commit()
     conn.close()
 
-
 def print_section_receipt(customer, items, section='kitchen', mode='normal'):
     """
     Unified print function for kitchen or bar.
+    Now includes print_group sorting and separators.
     
     section: 'kitchen' or 'bar'
     mode: 'normal', 'new_only', or 'reprint'
@@ -1022,6 +1047,16 @@ def print_section_receipt(customer, items, section='kitchen', mode='normal'):
         print(f"[INFO] No {section} items to print.")
         return "no_items"
 
+    # ============================================
+    # Sort by print_group
+    # ============================================
+    print_groups = posdb.get_category_print_groups()
+    items_to_print_sorted = sorted(items_to_print, key=lambda x: (
+        print_groups.get(x.get('category_id'), 1),
+        x.get('category_order', 999),
+        x.get('product_name', '')
+    ))
+
     # Build customer info
     cart_id = customer_data['cart_id']
     cart_note = cart_data.get('overall_note', '')
@@ -1031,7 +1066,8 @@ def print_section_receipt(customer, items, section='kitchen', mode='normal'):
     
     if customer_data['order_type'] in ['dine', 'delivery']:
         customer_info += (
-            ("\nTABLE: " + str(customer_data['table_number']) + "   COVERS: " + str(customer_data['table_cover']) 
+            ("\nTABLE: " + str(customer_data.get('table_display') or customer_data.get('table_number', '')) + 
+             "   GUESTS: " + str(customer_data.get('total_covers') or customer_data.get('table_cover', ''))
              if customer_data['order_type'] == "dine" else "") +
             (("\n" + customer_data['address']) if customer_data['order_type'] == "delivery" and customer_data.get('address') else "") +
             (("\n" + customer_data['postcode']) if customer_data['order_type'] == "delivery" and customer_data.get('postcode') else "")
@@ -1043,7 +1079,7 @@ def print_section_receipt(customer, items, section='kitchen', mode='normal'):
         if section_printer:
             printer = Win32Raw(section_printer)
         else:
-            printer = Win32Raw()  # default printer
+            printer = Win32Raw()
 
         printer.set(font=font, align='center', width=font_width, height=font_height, bold=False, custom_size=custom_size)
         
@@ -1070,18 +1106,28 @@ def print_section_receipt(customer, items, section='kitchen', mode='normal'):
         
         printer.set(font=font, align='left', width=font_width, height=font_height, bold=False, custom_size=custom_size)
         
+        # ============================================
+        # Print items with separators
+        # ============================================
         total_items = 0
+        last_group = None
 
-        for item in items_to_print:
+        for item in items_to_print_sorted:
+            # --- Print group separator ---
+            current_group = print_groups.get(item.get('category_id'), 1)
+            
+            if last_group == 0 and current_group > 0:
+                printer.text("_" * column_width + "\n\n")
+            elif last_group == 1 and current_group == 2:
+                printer.text("_" * column_width + "\n\n")
+            
+            last_group = current_group
+            # --- End separator logic ---
+
             product = item.get('product_name')
             quantity = item['print_quantity']
-            base_price = float(item.get('price', 0))
             product_note = item.get('product_note', '')
-            item_discount_amount = float(item.get('product_discount', 0) or 0)
-            item_discount_type = item.get('product_discount_type')
             options_data = item.get('options', "")
-
-            item_total_price = base_price * quantity
 
             option_lines = []
             if options_data:
@@ -1089,27 +1135,14 @@ def print_section_receipt(customer, items, section='kitchen', mode='normal'):
                 for option in options:
                     option_name = option[1]
                     try:
-                        option_price = float(option[2])
                         option_qty = int(option[4])
                     except (IndexError, ValueError):
-                        option_price = 0
                         option_qty = 1
-
-                    total_option_price = option_price * option_qty * quantity
-                    item_total_price += total_option_price
 
                     qty_str = f"{option_qty}x " if option_qty > 1 else ""
                     option_lines.append(f"{qty_str}{option_name}")
 
-            if item_discount_amount > 0:
-                discounted_price = calculate_cart_discounts(item_discount_amount, item_discount_type, item_total_price)
-                item_level_discount = item_total_price - discounted_price
-            else:
-                discounted_price = item_total_price
-                item_level_discount = 0
-
-            product_display = f"{product}*" if item_level_discount > 0 else product
-            printer.textln(f"{quantity}x {product_display}\n")
+            printer.textln(f"{quantity}x {product}\n")
 
             if option_lines:
                 print_block(printer, option_lines, "  +", spacing=2)
@@ -1146,7 +1179,6 @@ def print_section_receipt(customer, items, section='kitchen', mode='normal'):
         print(f"Error printing {section} receipt: {e}")
         traceback.print_exc()
         return "error"
-
 
 def send_to_sections(customer, items, sections=None, mode='new_only'):
     """
