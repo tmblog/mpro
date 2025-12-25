@@ -2,8 +2,11 @@
 {% set show_navbar = false %}
 {% block title %}POS{% endblock %}
 {% block head %}
+
 <link rel="stylesheet" href="{{ url_for('static', filename='css/modals.custom.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/pos-mobile.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/pos-mobile-fixes.css') }}">
+
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -154,66 +157,51 @@
     <!-- ═══════════════════════════════════════════════════════════════════════
          CART DRAWER - Bottom Docked, Expandable
          ═══════════════════════════════════════════════════════════════════════ -->
-    <aside class="pos-cart-drawer" id="cartDrawer">
-        <!-- Drag Handle -->
-        <div class="pos-cart-handle" onclick="toggleMobileCart()">
-            <div class="pos-cart-handle-bar"></div>
+    <!-- Cart Summary Bar -->
+    <aside class="pos-cart-bar" id="cartBar">
+        <div class="cart-bar-info">
+            <span class="cart-bar-count" id="cartItemCount">0 items</span>
+            <span class="cart-bar-total" id="cartTotalSmall">£0.00</span>
         </div>
-
-        <!-- Cart Summary (always visible) -->
-        <div class="pos-cart-summary" onclick="toggleMobileCart()">
-            <div class="pos-cart-summary-left">
-                <span class="pos-cart-item-count" id="cartItemCount">0 items</span>
-                <span class="pos-cart-total-small" id="cartTotalSmall">£0.00</span>
-            </div>
-            <div class="pos-cart-summary-right">
-                <button class="btn btn-success pos-charge-btn" id="summaryChargeBtn" onclick="event.stopPropagation();">
-                    Charge
-                </button>
-            </div>
-        </div>
-
-        <!-- Expanded Cart Content -->
-        <div class="pos-cart-expanded">
-            <!-- Customer/Table Info -->
-            <div class="pos-cart-info" id="cartView">
-                <!-- Populated by displayCartData() -->
-            </div>
-
-            <!-- Cart Items List -->
-            <div class="pos-cart-items" id="cartItemView">
-                <div class="pos-cart-empty">
-                    <i class="bi-basket"></i>
-                    <p>Cart is empty</p>
-                </div>
-            </div>
-
-            <!-- Totals -->
-            <div class="pos-cart-totals" id="cartUtility">
-                <div class="pos-total-row">
-                    <span>Subtotal</span>
-                    <span id="subtotalSpan">£0.00</span>
-                </div>
-                <div class="pos-total-row" id="deliveryServiceSpan">
-                    <span>Service</span>
-                    <span id="serviceSpan">£0.00</span>
-                </div>
-                <div class="pos-total-row">
-                    <span>Discount</span>
-                    <span id="discountSpan">-</span>
-                </div>
-                <div class="pos-total-row pos-total-grand">
-                    <span>Total</span>
-                    <span id="totalSpan">£0.00</span>
-                </div>
-            </div>
-
-            <!-- Checkout Actions -->
-            <div class="pos-cart-actions" id="checkoutDiv">
-                <!-- Populated by fetchAndDisplayCartItems() -->
-            </div>
-        </div>
+        <button class="btn btn-success cart-bar-btn" id="viewCartBtn" onclick="openCartModal()">
+            View Cart
+        </button>
     </aside>
+
+    <!-- Cart Modal -->
+    <div class="modal fade" id="cartModal" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-fullscreen">
+            <div class="modal-content">
+                <div class="modal-header py-2">
+                    <h5 class="modal-title">Cart</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-2">
+                    <!-- Customer/Table Info -->
+                    <div class="cart-modal-info mb-2" id="cartView"></div>
+                    
+                    <!-- Cart Items -->
+                    <div class="cart-modal-items" id="cartItemView">
+                        <div class="text-center text-muted py-4">
+                            <i class="bi-basket fs-1"></i>
+                            <p>Cart is empty</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Totals -->
+                    <div class="cart-modal-totals" id="cartUtility">
+                        <div class="d-flex justify-content-between"><span>Subtotal</span><span id="subtotalSpan">£0.00</span></div>
+                        <div class="d-flex justify-content-between" id="deliveryServiceSpan"><span>Service</span><span id="serviceSpan">£0.00</span></div>
+                        <div class="d-flex justify-content-between"><span>Discount</span><span id="discountSpan">-</span></div>
+                        <div class="d-flex justify-content-between fw-bold border-top pt-2 mt-2"><span>Total</span><span id="totalSpan">£0.00</span></div>
+                    </div>
+                </div>
+                <div class="modal-footer p-2" id="checkoutDiv">
+                    <!-- Checkout buttons populated by JS -->
+                </div>
+            </div>
+        </div>
+    </div>
 
 </div>
 
@@ -542,14 +530,32 @@
     // CART DISPLAY (adapted for mobile layout)
     // ═══════════════════════════════════════════════════════════════════════════
     
+    function openCartModal() {
+        const modal = new bootstrap.Modal(document.getElementById('cartModal'));
+        modal.show();
+    }
+
+    // Close cart modal
+    function closeCartModal() {
+        const modalEl = document.getElementById('cartModal');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
+    }
+
     function updateMobileCartSummary(itemCount, total) {
-        document.getElementById('cartItemCount').textContent = `${itemCount} item${itemCount !== 1 ? 's' : ''}`;
-        document.getElementById('cartTotalSmall').textContent = `£${total.toFixed(2)}`;
+        const countEl = document.getElementById('cartItemCount');
+        const totalEl = document.getElementById('cartTotalSmall');
+        const viewBtn = document.getElementById('viewCartBtn');
         
-        const chargeBtn = document.getElementById('summaryChargeBtn');
-        if (chargeBtn) {
-            chargeBtn.textContent = `Charge £${total.toFixed(2)}`;
+        if (countEl) countEl.textContent = `${itemCount} item${itemCount !== 1 ? 's' : ''}`;
+        if (totalEl) {
+            totalEl.textContent = `£${total.toFixed(2)}`;
+            // Pulse animation
+            totalEl.classList.remove('cart-total-pulse');
+            void totalEl.offsetWidth;
+            totalEl.classList.add('cart-total-pulse');
         }
+        if (viewBtn) viewBtn.textContent = `View Cart · £${total.toFixed(2)}`;
     }
 
     // Override or extend fetchAndDisplayCartItems to update mobile summary
@@ -639,15 +645,24 @@
                 showToast(result.error, false);
             } else {
                 fetchAndDisplayCartItems(cartId);
-                // Brief flash of cart to confirm item added
-                expandMobileCart();
-                setTimeout(collapseMobileCart, 800);
+                // Animate the cart total instead of opening cart
+                animateCartTotal();
             }
         })
         .catch(error => {
             console.error("Error:", error);
             showToast("Error adding item to cart", false);
         });
+    }
+
+    function animateCartTotal() {
+        const totalEl = document.getElementById('cartTotalSmall');
+        
+        if (totalEl) {
+            totalEl.classList.remove('cart-total-pulse');
+            void totalEl.offsetWidth; // Force reflow to restart animation
+            totalEl.classList.add('cart-total-pulse');
+        }
     }
 
     function fetchOptionsData(optionArray, currentMenu, productId, productName, formattedPrice, categoryOrder, vatable) {
@@ -820,55 +835,50 @@ function displayCartData(cartData) {
             </div>
         `;
         
+        // FIX: Added onclick with stopPropagation and touchend handlers
+        // Also made buttons larger with more padding for better touch targets
         mergeSpltButtons = `
-            <div class="btn-group btn-group-sm mt-2">
-                <button class="btn btn-outline-primary btn-sm" onclick="showEditTablesModal(${cartData.cart_id})" title="Edit">
-                    <i class="bi-pencil"></i>
+            <div class="dropdown d-inline-block ms-1">
+                <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" onclick="event.stopPropagation()">
+                    <i class="bi-three-dots-vertical"></i>
                 </button>
-                <button class="btn btn-outline-success btn-sm" onclick="showMergeTablesModal(${cartData.cart_id})" title="Merge">
-                    <i class="bi-plus-square"></i>
-                </button>
-                <button class="btn btn-outline-warning btn-sm" onclick="showSplitTablesModal(${cartData.cart_id})" title="Split">
-                    <i class="bi-scissors"></i>
-                </button>
+                <ul class="dropdown-menu dropdown-menu-end table-actions-dropdown">
+                    <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); showEditTablesModal(${cartData.cart_id})"><i class="bi-pencil me-2"></i>Edit Table</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); showMergeTablesModal(${cartData.cart_id})"><i class="bi-plus-square me-2"></i>Merge Tables</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); showSplitTablesModal(${cartData.cart_id})"><i class="bi-scissors me-2"></i>Split Tables</a></li>
+                </ul>
             </div>
         `;
     }
     
     const htmlContent = `
-        <div class="d-flex justify-content-between align-items-start gap-2">
-            <div style="flex: 1; min-width: 0;">
-                <button class="btn btn-link text-dark p-0 text-start d-block w-100" 
-                        onclick="customerOrders('${cartData.customer_id}','${cartData.cart_id}', '${cartData.cart_menu}')">
-                    
+        <div class="cart-info-container">
+            <div class="cart-info-main">
+                <div class="cart-info-customer" onclick="customerOrders('${cartData.customer_id}','${cartData.cart_id}', '${cartData.cart_menu}')">
                     ${cartData.order_type !== 'dine' ? `
-                    <div class="d-flex align-items-center gap-2">
-                        <i class="bi-person-fill text-muted"></i>
-                        <span class="fw-semibold text-truncate">${cartData.customer_name}</span>
-                    </div>
-                    <div class="d-flex flex-wrap gap-2 text-muted small">
-                        <span><i class="bi-telephone"></i> ${cartData.customer_telephone}</span>
-                        ${postcode ? `<span><i class="bi-geo-alt"></i> ${postcode}</span>` : ''}
-                    </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <i class="bi-person-fill text-muted"></i>
+                            <span class="fw-semibold text-truncate">${cartData.customer_name}</span>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2 text-muted small">
+                            <span><i class="bi-telephone"></i> ${cartData.customer_telephone}</span>
+                            ${postcode ? `<span><i class="bi-geo-alt"></i> ${postcode}</span>` : ''}
+                        </div>
                     ` : tableDisplay}
-                </button>
+                </div>
                 
-                <div class="d-flex gap-1 mt-1 flex-wrap">
+                <div class="cart-info-actions d-flex align-items-center gap-1">
                     <button class="btn btn-dark btn-sm rounded-pill text-capitalize" 
-                            onclick="fetchPosMethods('${cartData.cart_id}')">
+                            onclick="event.stopPropagation(); fetchPosMethods('${cartData.cart_id}')">
                         <i class="${getOrderTypeIcon(cartData.order_type)}"></i> ${cartData.order_type}
                     </button>
                     ${cartData.order_type === 'dine' ? mergeSpltButtons : ''}
+                    <span class="badge bg-secondary ms-auto">#${cartData.cart_id}</span>
+                    <button class="btn btn-outline-danger btn-sm" 
+                            onclick="event.stopPropagation(); confirmAction(${cartData.cart_id}, 'Delete this cart?', deleteCart)">
+                        <i class="bi-trash3"></i>
+                    </button>
                 </div>
-            </div>
-            
-            <div class="d-flex flex-column align-items-end gap-1">
-                <span class="badge bg-secondary">#${cartData.cart_id}</span>
-                <button class="btn btn-outline-danger btn-sm" 
-                        onclick="confirmAction(${cartData.cart_id}, 'Delete this cart?', deleteCart)">
-                    <i class="bi-trash3"></i>
-                </button>
-            </div>
         </div>
     `;
     
@@ -1082,14 +1092,36 @@ function calculateDiscountedPriceForCartItems(item, totalPrice) {
     return ((item.price + totalPrice) * item.quantity).toFixed(2);
 }
 
+let previousTotal = 0;
+
 function updateMobileCartSummary(itemCount, total) {
     const countEl = document.getElementById('cartItemCount');
     const totalEl = document.getElementById('cartTotalSmall');
     const chargeBtn = document.getElementById('summaryChargeBtn');
     
     if (countEl) countEl.textContent = `${itemCount} item${itemCount !== 1 ? 's' : ''}`;
-    if (totalEl) totalEl.textContent = `£${total.toFixed(2)}`;
-    if (chargeBtn) chargeBtn.textContent = `Charge £${total.toFixed(2)}`;
+    
+    if (totalEl) {
+        totalEl.textContent = `£${total.toFixed(2)}`;
+        
+        // Animate if total increased
+        if (total > previousTotal && previousTotal > 0) {
+            animateCartTotal();
+        }
+    }
+    
+    if (chargeBtn) {
+        chargeBtn.textContent = `Charge £${total.toFixed(2)}`;
+        chargeBtn.onclick = function(e) {
+            e.stopPropagation();
+            const cartId = getCurrentCartId();
+            if (cartId) {
+                expandMobileCart();
+            }
+        };
+    }
+    
+    previousTotal = total;
 }
 
 function deleteCart(cartId) {
