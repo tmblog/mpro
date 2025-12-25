@@ -54,7 +54,7 @@
                     {% endif %}
                     {% endfor %}
                     <div class="col-md-2 p-0 border border-light">
-                        <button class="btn btn-soft-dark text-start w-100 rounded-0 col-md-3 text-truncate" onclick="createMiscItem(this);" style="padding:10px">Misc Item</button>
+                        <button class="btn btn-soft-dark w-100 rounded-0 col-md-3 text-truncate" onclick="createMiscItem(this);" style="padding:10px">Misc Item</button>
                     </div>
                     <div class="col-md-2 p-0 border border-light">
                         <button class="category-btn btn btn-danger w-100 rounded-0 col-md-3 text-truncate" data-category-id="0" style="padding:10px">Favourites</button>
@@ -697,50 +697,96 @@
 
     function displayCartData(cartData) {
         const cartViewDiv = document.getElementById('cartView');
-        if (cartViewDiv) {
-            let address = cartData.address == null ? "" : cartData.address;
-            let postcode = cartData.postcode == null ? "" : cartData.postcode;
-            const htmlContent = `
-                <div style="flex: 1; min-width: 0;">
-                    <button class="btn btn-link text-dark p-0 text-start d-block w-100" 
-                            onclick="customerOrders('${cartData.customer_id}','${cartData.cart_id}', '${cartData.cart_menu}')">
-                        
-                        ${cartData.table_number == null ? `
-                        <div class="d-flex align-items-center gap-2">
-                            <i class="bi-person-fill text-muted"></i>
-                            <span class="fw-semibold text-truncate">${cartData.customer_name}</span>
-                        </div>
-                        <div class="d-flex flex-wrap gap-2 text-muted mt-1 text-uppercase">
-                            <small><i class="bi-telephone me-2"></i> ${cartData.customer_telephone}</small>
-                            ${postcode ? `<small><i class="bi-geo-alt"></i> ${postcode}</small>` : ''}
-                        </div>
-                        ` : `
-                        <div class="d-flex align-items-center gap-2">
-                            <i class="bi-cup-hot-fill text-muted"></i>
-                            <span class="fw-semibold">Table ${cartData.table_number}</span>
-                        </div>
-                        `}
-                    </button>
-                    
-                    <button class="btn btn-dark btn-sm rounded-pill mt-2 text-capitalize" 
-                            onclick="fetchPosMethods('${cartData.cart_id}')">
-                        <i class="${cartData.order_type === 'delivery' ? 'bi-truck' : cartData.order_type === 'takeaway' || cartData.order_type === 'waiting' ? 'bi-bag' : 'bi-shop'}"></i> 
-                        ${cartData.order_type}
-                    </button>
+        if (!cartViewDiv) return;
+        
+        let address = cartData.address == null ? "" : cartData.address;
+        let postcode = cartData.postcode == null ? "" : cartData.postcode;
+        
+        // Build table display for dine-in
+        let tableDisplay = '';
+        let mergeSpltButtons = '';
+        
+        if (cartData.order_type === 'dine') {
+            // Use new table_display field, fallback to table_number
+            const tableLabel = cartData.table_display || cartData.table_number || '';
+            const totalCovers = cartData.total_covers || cartData.table_cover || 0;
+            
+            tableDisplay = `
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi-cup-hot-fill text-muted"></i>
+                    <span class="fw-semibold">${tableLabel}</span>
+                    ${totalCovers > 0 ? `<span class="badge bg-secondary">${totalCovers} covers</span>` : ''}
                 </div>
-                
-                <!-- Order Actions -->
-                <div class="d-flex flex-column align-items-end gap-2">
-                    <span class="badge bg-secondary px-2">#${cartData.cart_id}</span>
-                    <button class="btn btn-outline-danger btn-sm" 
-                            onclick="confirmAction(${cartData.cart_id}, 'Delete this cart?', deleteCart)">
-                        <i class="bi-trash3"></i>
+            `;
+            
+            // Show edit/merge/split buttons for dine-in
+            mergeSpltButtons = `
+                <div class="btn-group btn-group-sm mt-2">
+                    <button class="btn btn-outline-primary" onclick="showEditTablesModal(${cartData.cart_id})" title="Edit covers or swap table">
+                        <i class="bi-pencil"></i>
+                    </button>
+                    <button class="btn btn-outline-success" onclick="showMergeTablesModal(${cartData.cart_id})" title="Add more tables">
+                        <i class="bi-plus-square"></i>
+                    </button>
+                    <button class="btn btn-outline-warning" onclick="showSplitTablesModal(${cartData.cart_id})" title="Split tables to new order">
+                        <i class="bi-scissors"></i>
                     </button>
                 </div>
             `;
-            cartViewDiv.innerHTML = htmlContent;
         }
+        
+        const htmlContent = `
+            <div style="flex: 1; min-width: 0;">
+                <button class="btn btn-link text-dark p-0 text-start d-block w-100" 
+                        onclick="customerOrders('${cartData.customer_id}','${cartData.cart_id}', '${cartData.cart_menu}')">
+                    
+                    ${cartData.order_type !== 'dine' ? `
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="bi-person-fill text-muted"></i>
+                        <span class="fw-semibold text-truncate">${cartData.customer_name}</span>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 text-muted mt-1 text-uppercase">
+                        <small><i class="bi-telephone me-2"></i> ${cartData.customer_telephone}</small>
+                        ${postcode ? `<small><i class="bi-geo-alt"></i> ${postcode}</small>` : ''}
+                    </div>
+                    ` : tableDisplay}
+                </button>
+                
+                <button class="btn btn-dark btn-sm rounded-pill mt-2 text-capitalize" 
+                        onclick="fetchPosMethods('${cartData.cart_id}')">
+                    <i class="${getOrderTypeIcon(cartData.order_type)}"></i> 
+                    ${cartData.order_type}
+                </button>
+                
+                ${cartData.order_type === 'dine' ? mergeSpltButtons : ''}
+            </div>
+            
+            <!-- Order Actions -->
+            <div class="d-flex flex-column align-items-end gap-2">
+                <span class="badge bg-secondary px-2">#${cartData.cart_id}</span>
+                <button class="btn btn-outline-danger btn-sm" 
+                        onclick="confirmAction(${cartData.cart_id}, 'Delete this cart?', deleteCart)">
+                    <i class="bi-trash3"></i>
+                </button>
+            </div>
+        `;
+        
+        cartViewDiv.innerHTML = htmlContent;
         fetchAndDisplayCartItems(cartData.cart_id);
+    }
+
+    /**
+     * Helper to get order type icon
+     */
+    function getOrderTypeIcon(orderType) {
+        const icons = {
+            'delivery': 'bi-truck',
+            'takeaway': 'bi-bag',
+            'waiting': 'bi-bag',
+            'dine': 'bi-shop',
+            'sale': 'bi-receipt'
+        };
+        return icons[orderType] || 'bi-cart';
     }
 
     function getCartItems(cartId) {
