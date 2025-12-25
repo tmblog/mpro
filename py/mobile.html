@@ -1,0 +1,2257 @@
+{% extends "base.html" %}
+{% set show_navbar = false %}
+{% block title %}POS{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/modals.custom.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/pos-mobile.css') }}">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+{% endblock %}
+
+{% block content %}
+<div class="pos-mobile-container">
+    
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         FIXED HEADER - New, Parked, Recent
+         ═══════════════════════════════════════════════════════════════════════ -->
+    <header class="pos-header">
+        <div class="pos-header-actions">
+            <button class="pos-header-btn pos-header-btn-new" onclick="fetchPosMethods();">
+                <i class="bi-plus-lg"></i>
+                <span>New</span>
+            </button>
+            <button class="pos-header-btn pos-header-btn-parked" onclick="getAllCarts(this);">
+                <i class="bi-pause-circle"></i>
+                <span>Parked</span>
+            </button>
+            <button class="pos-header-btn pos-header-btn-recent" onclick="getRecentCarts(this);">
+                <i class="bi-clock-history"></i>
+                <span>Recent</span>
+            </button>
+        </div>
+        
+        <!-- Optional: Current order indicator in header -->
+        <div class="pos-header-info" id="headerOrderInfo">
+            <span class="badge bg-secondary" id="headerCartId"></span>
+        </div>
+    </header>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         MENU FILTERS (if multiple menus exist)
+         ═══════════════════════════════════════════════════════════════════════ -->
+    {% if menus and menus|length > 0 %}
+    <nav class="pos-menu-filters" id="menuFilters">
+        <button class="pos-filter-btn active" onclick="filterMenu('all', this)">All</button>
+        {% for m in menus %}
+            {% set bg_color = m.menu_colour %}
+            {% set white_text_colors = ['red', 'green', 'blue', 'purple', 'gray', 'brown', 'pink'] %}
+            {% set text_colour = 'white' if bg_color in white_text_colors else 'black' %}
+            <button class="pos-filter-btn" 
+                    onclick="filterMenu('{{ m.slug }}', this)"
+                    style="background-color: {{ bg_color }}; color: {{ text_colour }};">
+                {{ m.name }}
+            </button>
+        {% endfor %}
+    </nav>
+    {% endif %}
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         CATEGORIES - Horizontal Scrolling
+         ═══════════════════════════════════════════════════════════════════════ -->
+    <nav class="pos-categories" id="categories">
+        {% for category in categories %}
+            {% if category.product_count > 0 %}
+                {% set bg_color = category['category_colour'] %}
+                {% set white_text_colors = ['red', 'green', 'blue', 'purple', 'gray', 'brown', 'pink'] %}
+                {% set text_colour = 'white' if bg_color in white_text_colors else 'black' %}
+                <button class="pos-category-btn category-btn"
+                        data-category-id="{{ category['category_id'] }}"
+                        data-category-colour="{{ category['category_colour'] }}"
+                        data-menus="{{ (category.menu_slugs|join(',')) if category.menu_slugs else '' }}"
+                        {% if bg_color %}style="background-color: {{ bg_color }}; color: {{ text_colour }};"{% endif %}>
+                    {{ category['category_name'] }}
+                </button>
+            {% endif %}
+        {% endfor %}
+        
+        <button class="pos-category-btn" onclick="createMiscItem(this);">
+            <i class="bi-tag"></i> Misc
+        </button>
+        
+        <button class="pos-category-btn category-btn pos-category-fav" data-category-id="0">
+            <i class="bi-star-fill"></i> Favs
+        </button>
+    </nav>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         PRODUCTS GRID - Main Scrollable Area
+         ═══════════════════════════════════════════════════════════════════════ -->
+    <main class="pos-products-area">
+        <div class="pos-products-grid" id="menuItems">
+            <div class="pos-products-empty">
+                <i class="bi-cart3"></i>
+                <p>Start an order to see products</p>
+            </div>
+        </div>
+
+        <!-- Product Options Overlay -->
+        <div id="productOverlay" class="product-overlay p-2 d-none">
+            <div id="loadingState" class="loading-container text-center">
+                <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <div class="mt-3 fs-5">Loading options...</div>
+            </div>
+            <div id="overlayContent" class="d-flex flex-column h-100" style="opacity: 0;">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <button class="btn btn-sm btn-danger ms-2" onclick="hideProductOptions()">
+                        <i class="bi bi-arrow-left"></i> Cancel
+                    </button>
+                    <h4 class="mb-0 me-2" id="overlayTitle">Product Options</h4>
+                </div>
+                <div id="productOptionsContent" class="flex-grow-1 overlayBody" style="overflow-y: auto; overflow-x: hidden;"></div>
+                <div class="mt-3" id="overlayFooter"></div>
+            </div>
+        </div>
+
+        <!-- Customisation Overlay (Multi-step options) -->
+        <div id="customisationOverlay">
+            <div class="overlay-container">
+                <header class="overlay-header">
+                    <div class="custom-header-row">
+                        <button id="customCloseBtn" class="btn btn-danger btn-sm" onclick="closeCustomisation()">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                        <span class="custom-selection-status" id="customSelectionStatus">
+                            Selected: 0 / 0
+                        </span>
+                        <button class="btn btn-sm btn-warning" id="customResetBtn" onclick="resetCurrentStep(0)">
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </button>
+                    </div>
+                </header>
+
+                <main class="overlay-content">
+                    <div class="custom-options-grid" id="customisationStepContainer"></div>
+                </main>
+
+                <footer class="overlay-footer">
+                    <button id="customPrevBtn" class="btn btn-secondary">
+                        <i class="bi bi-chevron-left"></i>
+                    </button>
+                    <button id="customRunningTotal" class="btn btn-success flex-grow-1">
+                        <i class="bi bi-cart-plus"></i> Add £0.00
+                    </button>
+                    <button id="customNextBtn" class="btn btn-primary">
+                        <i class="bi bi-chevron-right"></i>
+                    </button>
+                </footer>
+            </div>
+        </div>
+    </main>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         CART DRAWER - Bottom Docked, Expandable
+         ═══════════════════════════════════════════════════════════════════════ -->
+    <aside class="pos-cart-drawer" id="cartDrawer">
+        <!-- Drag Handle -->
+        <div class="pos-cart-handle" onclick="toggleMobileCart()">
+            <div class="pos-cart-handle-bar"></div>
+        </div>
+
+        <!-- Cart Summary (always visible) -->
+        <div class="pos-cart-summary" onclick="toggleMobileCart()">
+            <div class="pos-cart-summary-left">
+                <span class="pos-cart-item-count" id="cartItemCount">0 items</span>
+                <span class="pos-cart-total-small" id="cartTotalSmall">£0.00</span>
+            </div>
+            <div class="pos-cart-summary-right">
+                <button class="btn btn-success pos-charge-btn" id="summaryChargeBtn" onclick="event.stopPropagation();">
+                    Charge
+                </button>
+            </div>
+        </div>
+
+        <!-- Expanded Cart Content -->
+        <div class="pos-cart-expanded">
+            <!-- Customer/Table Info -->
+            <div class="pos-cart-info" id="cartView">
+                <!-- Populated by displayCartData() -->
+            </div>
+
+            <!-- Cart Items List -->
+            <div class="pos-cart-items" id="cartItemView">
+                <div class="pos-cart-empty">
+                    <i class="bi-basket"></i>
+                    <p>Cart is empty</p>
+                </div>
+            </div>
+
+            <!-- Totals -->
+            <div class="pos-cart-totals" id="cartUtility">
+                <div class="pos-total-row">
+                    <span>Subtotal</span>
+                    <span id="subtotalSpan">£0.00</span>
+                </div>
+                <div class="pos-total-row" id="deliveryServiceSpan">
+                    <span>Service</span>
+                    <span id="serviceSpan">£0.00</span>
+                </div>
+                <div class="pos-total-row">
+                    <span>Discount</span>
+                    <span id="discountSpan">-</span>
+                </div>
+                <div class="pos-total-row pos-total-grand">
+                    <span>Total</span>
+                    <span id="totalSpan">£0.00</span>
+                </div>
+            </div>
+
+            <!-- Checkout Actions -->
+            <div class="pos-cart-actions" id="checkoutDiv">
+                <!-- Populated by fetchAndDisplayCartItems() -->
+            </div>
+        </div>
+    </aside>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     MODALS & OFFCANVAS (unchanged structure)
+     ═══════════════════════════════════════════════════════════════════════════ -->
+
+<!-- Last Orders Offcanvas -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="lastOrdersCanvas">
+    <div class="offcanvas-header">
+        <h5 class="offcanvas-title">Last orders</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+    </div>
+    <div class="offcanvas-body" id="lastOrdersCanvasBody">
+        <div id="lastOrdersAccordion" class="accordion"></div>
+    </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container position-fixed top-0 end-0 p-3" id="toastContainer" style="z-index: 1055;"></div>
+
+{% endblock %}
+
+{% block footer %}
+<script>
+    const POS_CONFIG = {
+        userRole: Number("{{ session['role']|default(1) }}"),
+        maxDiscountPercent: Number("{{ session['max_discount_for_role_two']|default(10) }}")
+    };
+</script>
+<script src="{{ url_for('static', filename='js/sweetalert.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/pos.helpers.js') }}"></script>
+<script src="{{ url_for('static', filename='js/pos.steps.methods.helpers.js') }}"></script>
+<script src="{{ url_for('static', filename='js/checkout.helpers.js') }}"></script>
+<script src="{{ url_for('static', filename='js/discount.helpers.js') }}"></script>
+<script>
+    // ═══════════════════════════════════════════════════════════════════════════
+    // MOBILE CART DRAWER CONTROLS
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    const cartDrawer = document.getElementById('cartDrawer');
+    
+    function expandMobileCart() {
+        cartDrawer.classList.add('expanded');
+        document.body.classList.add('cart-open');
+    }
+    
+    function collapseMobileCart() {
+        cartDrawer.classList.remove('expanded');
+        document.body.classList.remove('cart-open');
+    }
+    
+    function toggleMobileCart() {
+        if (cartDrawer.classList.contains('expanded')) {
+            collapseMobileCart();
+        } else {
+            expandMobileCart();
+        }
+    }
+    
+    // Swipe gesture support
+    let touchStartY = 0;
+    let touchCurrentY = 0;
+    
+    cartDrawer.addEventListener('touchstart', (e) => {
+        touchStartY = e.touches[0].clientY;
+    }, { passive: true });
+    
+    cartDrawer.addEventListener('touchmove', (e) => {
+        touchCurrentY = e.touches[0].clientY;
+    }, { passive: true });
+    
+    cartDrawer.addEventListener('touchend', () => {
+        const diff = touchStartY - touchCurrentY;
+        if (Math.abs(diff) > 50) {
+            if (diff > 0) {
+                expandMobileCart();
+            } else {
+                collapseMobileCart();
+            }
+        }
+    });
+    
+    // Close cart when tapping outside
+    document.querySelector('.pos-products-area').addEventListener('click', () => {
+        if (cartDrawer.classList.contains('expanded')) {
+            collapseMobileCart();
+        }
+    });
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // CUSTOMISATION OVERLAY (same logic, kept for compatibility)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    let customData = {
+        steps: [],
+        selections: [],
+        currentStep: 0,
+        basePrice: 0,
+        meta: null
+    };
+    let lastCustomTotal = 0;
+    
+    function launchCustomisationUI(options, meta = {}) {
+        customData.steps = options;
+        customData.selections = Array(options.length).fill(null).map(() => ({}));
+        customData.currentStep = 0;
+        customData.basePrice = parseFloat(meta.formattedPrice) || 0;
+        customData.meta = meta;
+        const overlay = document.getElementById('customisationOverlay');
+        overlay.classList.add('show');
+        renderCustomisationStep(options[0], 0);
+        updateCustomFooter();
+    }
+
+    function renderCustomisationStep(step, stepIndex) {
+        const selected = customData.selections[stepIndex];
+        const container = document.getElementById('customisationStepContainer');
+        const selectedCount = Object.values(selected).reduce((a, b) => a + b, 0);
+        const maxAllowed = step.option_item_max;
+        const stepTitle = step.option_name || `Step ${stepIndex + 1}`;
+
+        document.getElementById('customSelectionStatus').textContent = `${stepTitle}: ${selectedCount} / ${maxAllowed}`;
+        document.getElementById('customResetBtn').setAttribute('onclick', `resetCurrentStep(${stepIndex})`);
+
+        const rowsHTML = step.items.map(item => {
+            const count = selected[item.option_item_id] || 0;
+            const whiteTextColors = ['red', 'green', 'blue', 'purple', 'gray', 'brown'];
+            const bgColor = item.option_item_colour;
+            const optionTextColour = whiteTextColors.includes(bgColor) ? 'white' : 'black';
+            const style = !bgColor ? '' : `style="background-color: ${bgColor}; color: ${optionTextColour};"`;
+
+            return `
+            <div class="custom-option-item">
+                <button ${style} type="button"
+                        class="custom-option-btn ${count > 0 ? 'selected' : ''}"
+                        onclick="increaseItem(${item.option_item_id}, ${step.option_item_max}, ${stepIndex})">
+                    <span class="custom-option-name">${item.option_item_name}</span>
+                    ${item.price > 0 ? `<span class="custom-option-price">+£${item.price.toFixed(2)}</span>` : ''}
+                    ${count > 0 ? `<span class="custom-option-count">${count}</span>` : ''}
+                </button>
+                ${count > 0 ? `
+                    <button class="custom-option-remove" onclick="decreaseItem(${item.option_item_id}, ${stepIndex}, event)">
+                        <i class="bi bi-dash"></i>
+                    </button>
+                ` : ''}
+            </div>`;
+        }).join('');
+
+        container.innerHTML = rowsHTML;
+    }
+
+    function resetCurrentStep(stepIndex) {
+        customData.selections[stepIndex] = {};
+        renderCustomisationStep(customData.steps[stepIndex], stepIndex);
+        updateCustomFooter();
+    }
+
+    function increaseItem(id, max, stepIndex) {
+        const selected = customData.selections[stepIndex];
+        const total = Object.values(selected).reduce((a, b) => a + b, 0);
+        if (total < max) {
+            selected[id] = (selected[id] || 0) + 1;
+            renderCustomisationStep(customData.steps[stepIndex], stepIndex);
+            updateCustomFooter();
+
+            if (max === 1 && stepIndex < customData.steps.length - 1) {
+                setTimeout(() => {
+                    customData.currentStep++;
+                    renderCustomisationStep(customData.steps[customData.currentStep], customData.currentStep);
+                    updateCustomFooter();
+                }, 200);
+            }
+        }
+    }
+
+    function decreaseItem(id, stepIndex, event) {
+        event.stopPropagation();
+        const selected = customData.selections[stepIndex];
+        if (selected[id]) {
+            selected[id]--;
+            if (selected[id] <= 0) delete selected[id];
+            renderCustomisationStep(customData.steps[stepIndex], stepIndex);
+            updateCustomFooter();
+        }
+    }
+
+    function updateCustomFooter() {
+        document.getElementById('customPrevBtn').disabled = customData.currentStep === 0;
+        const isLast = customData.currentStep === customData.steps.length - 1;
+        document.getElementById('customNextBtn').innerHTML = isLast 
+            ? '<i class="bi bi-check-lg"></i>' 
+            : '<i class="bi bi-chevron-right"></i>';
+        
+        const total = calculateCustomTotal();
+        const totalBtn = document.getElementById('customRunningTotal');
+        totalBtn.innerHTML = `<i class="bi bi-cart-plus"></i> Add £${total.toFixed(2)}`;
+
+        if (total !== lastCustomTotal) {
+            totalBtn.classList.add('pulse');
+            setTimeout(() => totalBtn.classList.remove('pulse'), 300);
+        }
+        lastCustomTotal = total;
+    }
+
+    function calculateCustomTotal() {
+        let total = customData.basePrice;
+        customData.steps.forEach((step, idx) => {
+            const selection = customData.selections[idx];
+            for (const [id, qty] of Object.entries(selection)) {
+                const item = step.items.find(i => i.option_item_id == id);
+                if (item) total += item.price * qty;
+            }
+        });
+        return total;
+    }
+
+    function closeCustomisation() {
+        document.getElementById('customisationOverlay').classList.remove('show');
+    }
+
+    document.getElementById('customPrevBtn').addEventListener('click', () => {
+        if (customData.currentStep > 0) {
+            customData.currentStep--;
+            renderCustomisationStep(customData.steps[customData.currentStep], customData.currentStep);
+            updateCustomFooter();
+        }
+    });
+
+    document.getElementById('customNextBtn').addEventListener('click', () => {
+        if (customData.currentStep < customData.steps.length - 1) {
+            customData.currentStep++;
+            renderCustomisationStep(customData.steps[customData.currentStep], customData.currentStep);
+            updateCustomFooter();
+        } else {
+            completeCustomisation();
+        }
+    });
+
+    document.getElementById('customRunningTotal').addEventListener('click', () => {
+        completeCustomisation();
+    });
+
+    function completeCustomisation() {
+        const optionString = buildOptionString();
+        addToCart(
+            customData.meta.productId,
+            customData.meta.productName,
+            customData.meta.formattedPrice,
+            optionString,
+            customData.meta.categoryOrder,
+            customData.meta.vatable
+        );
+        closeCustomisation();
+    }
+
+    function buildOptionString() {
+        const parts = [];
+        customData.steps.forEach((step, stepIndex) => {
+            const selection = customData.selections[stepIndex];
+            for (const [id, qty] of Object.entries(selection)) {
+                const item = step.items.find(i => i.option_item_id == id);
+                if (item) {
+                    parts.push(`${id}|${item.option_item_name}|${item.price}|${stepIndex}|${qty}|${item.vatable}`);
+                }
+            }
+        });
+        return parts.join(', ');
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // PRODUCT LOADING (adapted for mobile grid)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    function loadProducts(categoryId, currentMenu, categoryColour, categoryTextColour) {
+        if (!currentMenu) {
+            fetchPosMethods();
+            return;
+        }
+        fetch(`/get_products_v2/${categoryId}/${currentMenu}`)
+            .then(response => response.json())
+            .then(data => {
+                let productsHtml = '';
+                data.forEach(function(product) {
+                    const formattedPrice = parseFloat(product[2]).toFixed(2);
+                    const hasOptions = product[3] && product[3].trim() !== '';
+                    const optionMarker = hasOptions ? '<span class="pos-product-options-badge">+</span>' : '';
+                    
+                    const trackInventory = product[7];
+                    const stockQuantity = product[8];
+                    const lowStockThreshold = product[9];
+                    const isOutOfStock = trackInventory === 1 && stockQuantity <= 0;
+                    const isLowStock = trackInventory === 1 && stockQuantity > 0 && stockQuantity <= lowStockThreshold;
+                    
+                    let stockBadge = '';
+                    if (isOutOfStock) {
+                        stockBadge = '<span class="pos-product-stock-badge out">OUT</span>';
+                    } else if (isLowStock) {
+                        stockBadge = `<span class="pos-product-stock-badge low">${stockQuantity}</span>`;
+                    }
+                    
+                    const whiteTextColors = ['red', 'green', 'blue', 'purple', 'gray', 'brown'];
+                    const bgColor = product[6];
+                    const textColour = whiteTextColors.includes(bgColor) ? 'white' : 'black';
+                    const style = bgColor ? `style="background-color: ${bgColor}; color: ${textColour};"` : '';
+                    const productName = product[1].replace(/'/g, '');
+                    const disabledClass = isOutOfStock ? 'disabled' : '';
+                    
+                    productsHtml += `
+                        <button class="pos-product-btn ${disabledClass}" 
+                                onclick="handleProductButton(event, '${product[0]}','${productName}', '${formattedPrice}', '${product[3]}', '${currentMenu}', '${product[4]}', '${product[5]}')"
+                                ${style}
+                                ${isOutOfStock ? 'disabled' : ''}>
+                            ${stockBadge}
+                            ${optionMarker}
+                            <span class="pos-product-name">${productName}</span>
+                            <span class="pos-product-price">£${formattedPrice}</span>
+                        </button>
+                    `;
+                });
+                document.getElementById('menuItems').innerHTML = productsHtml || '<div class="pos-products-empty"><p>No products in this category</p></div>';
+            });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // CART DISPLAY (adapted for mobile layout)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    function updateMobileCartSummary(itemCount, total) {
+        document.getElementById('cartItemCount').textContent = `${itemCount} item${itemCount !== 1 ? 's' : ''}`;
+        document.getElementById('cartTotalSmall').textContent = `£${total.toFixed(2)}`;
+        
+        const chargeBtn = document.getElementById('summaryChargeBtn');
+        if (chargeBtn) {
+            chargeBtn.textContent = `Charge £${total.toFixed(2)}`;
+        }
+    }
+
+    // Override or extend fetchAndDisplayCartItems to update mobile summary
+    const originalFetchAndDisplayCartItems = window.fetchAndDisplayCartItems;
+    if (typeof originalFetchAndDisplayCartItems === 'function') {
+        // Keep existing function, it will populate #cartItemView, #cartUtility, #checkoutDiv
+        // We just need to also update the summary bar
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // INITIALIZATION
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        initializeSoundSetting();
+        
+        // Category button clicks
+        document.querySelectorAll('.category-btn').forEach(function(button) {
+            button.addEventListener('click', function() {
+                playSoundFile("stop.mp3");
+                
+                // Remove active from all, add to clicked
+                document.querySelectorAll('.pos-category-btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                
+                const categoryId = this.getAttribute('data-category-id');
+                const categoryColour = this.getAttribute('data-category-colour');
+                const currentMenu = getCurrentCartMenu();
+                loadProducts(categoryId, currentMenu, categoryColour);
+            });
+        });
+        
+        // Load existing cart if present
+        const currentCart = getCurrentCartId();
+        if (currentCart) {
+            fetchCartData(currentCart);
+        }
+
+        const currentMenu = getCurrentCartMenu();
+        if (currentMenu) {
+            loadProductsForSelectedCategory(currentMenu);
+        }
+    });
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // KEEP ALL OTHER EXISTING FUNCTIONS FROM client.html
+    // (getAllCarts, getRecentCarts, addToCart, handleProductButton, etc.)
+    // They work the same, just copy them here or keep in separate JS files
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    function handleProductButton(event, productId, productName, formattedPrice, options, currentMenu, categoryOrder, vatable) {
+        event.preventDefault();
+        playSoundFile("stop.mp3");
+        if (options === 'null') {
+            addToCart(productId, productName, formattedPrice, options, categoryOrder, vatable);
+        } else {
+            const optionArray = options.split(',').map(option => option.trim());
+            fetchOptionsData(optionArray, currentMenu, productId, productName, formattedPrice, categoryOrder, vatable);
+        }
+    }
+
+    function addToCart(productId, productName, formattedPrice, options, categoryOrder, vatable) {
+        const cartId = getCurrentCartId();
+        if (!cartId) {
+            fetchPosMethods();
+            return;
+        }
+        const data = {
+            productId,
+            cartId,
+            productName,
+            formattedPrice,
+            quantity: 1,
+            options: options == "null" ? "" : options,
+            productNote: "",
+            categoryOrder,
+            vatable: vatable
+        };
+        fetch('/add_to_cart', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.error) {
+                showToast(result.error, false);
+            } else {
+                fetchAndDisplayCartItems(cartId);
+                // Brief flash of cart to confirm item added
+                expandMobileCart();
+                setTimeout(collapseMobileCart, 800);
+            }
+        })
+        .catch(error => {
+            console.error("Error:", error);
+            showToast("Error adding item to cart", false);
+        });
+    }
+
+    function fetchOptionsData(optionArray, currentMenu, productId, productName, formattedPrice, categoryOrder, vatable) {
+        fetch('/get_product_options', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                product_id: productId,
+                option_ids: optionArray,
+                current_menu: currentMenu
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.options) {
+                launchCustomisationUI(data.options, { productId, productName, formattedPrice, categoryOrder, vatable });
+            } else {
+                showToast('No options found for this product', false);
+            }
+        })
+        .catch(err => {
+            console.error('Option fetch failed', err);
+            showToast('Error fetching options', false);
+        });
+    }
+
+    function filterMenu(slug, btn) {
+        document.querySelectorAll('.pos-filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        document.querySelectorAll('.pos-category-btn.category-btn').forEach(catBtn => {
+            const menus = catBtn.getAttribute('data-menus') || '';
+            const list = menus ? menus.split(',').map(s => s.trim()) : [];
+            const show = (slug === 'all') || list.includes(slug);
+            catBtn.style.display = show ? '' : 'none';
+        });
+    }
+
+    /* =============================================================================
+   POS MOBILE - COMPLETE JAVASCRIPT
+   All functions needed for the mobile POS client
+   ============================================================================= */
+
+// =============================================================================
+// CART MANAGEMENT
+// =============================================================================
+
+function getAllCarts(button) {
+    disableButtonWithSpinner(button);
+    fetch('/get_all_carts')
+        .then(response => response.json())
+        .then(data => {
+            if (data.length > 0) {
+                const cartDiv = document.createElement('div');
+                cartDiv.classList.add('row', 'g-2', 'mb-2');
+
+                data.forEach(cartObj => {
+                    const [id, type, , timestamp, , itemCount, details, tableNumber] = cartObj;
+                    const formattedTime = moment(timestamp).fromNow();
+                    
+                    const typeConfig = {
+                        'takeaway': { class: 'btn-primary', icon: 'bi-bag', label: 'Takeaway' },
+                        'delivery': { class: 'btn-success', icon: 'bi-truck', label: 'Delivery' },
+                        'waiting': { class: 'btn-warning', icon: 'bi-hourglass', label: 'Waiting' },
+                        'sale': { class: 'btn-primary', icon: 'bi-receipt', label: 'General Sale' },
+                        'dine': { class: 'btn-info', icon: 'bi-cup-hot', label: `Table ${tableNumber}` },
+                        'default': { class: 'btn-secondary', icon: 'bi-cart', label: 'Order' }
+                    };
+                    
+                    const config = typeConfig[type] || typeConfig.default;
+                    const displayDetails = type === 'dine' ? '' : `<small class="d-block text-truncate">${details}</small>`;
+                    
+                    const buttonHtml = `
+                    <div class="col-6">
+                        <button class="btn ${config.class} w-100 h-100 p-2 position-relative text-start" 
+                                onclick="fetchCartData(${id}); closeModal();">
+                            <div class="d-flex align-items-center gap-2">
+                                <i class="bi ${config.icon} fs-5"></i>
+                                <div style="min-width: 0; flex: 1;">
+                                    <div class="fw-semibold">${config.label}</div>
+                                    ${displayDetails}
+                                    <small class="opacity-75">${formattedTime}</small>
+                                </div>
+                            </div>
+                            <span class="position-absolute top-0 end-0 translate-middle-y badge rounded-pill bg-danger me-2">
+                                ${itemCount}
+                            </span>
+                        </button>
+                    </div>`;
+                    
+                    cartDiv.innerHTML += buttonHtml;
+                });
+                
+                updateModal('Saved Carts', cartDiv.outerHTML, '');
+                openModal();
+            } else {
+                updateModal('No carts saved', '<div class="text-center p-4"><i class="bi-inbox fs-1 text-muted"></i><p class="mt-2">No saved carts available</p></div>', '');
+                openModal();
+            }
+            enableButtonRemoveSpinner(button);
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            enableButtonRemoveSpinner(button);
+        });
+}
+
+function createNewCart(orderType, orderMenu, overallNote, customer, cartId, currentMenu) {
+    const data = {
+        order_type: orderType,
+        order_menu: orderMenu,
+        overall_note: overallNote,
+        customer: customer,
+        cart_id: cartId,
+        current_menu: currentMenu
+    };
+    fetch('/create_cart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    })
+    .then(response => {
+        if (!response.ok) throw new Error('Failed to create cart');
+        return response.json();
+    })
+    .then(data => {
+        const cartId = data.cart_id;
+        setCurrentCartId(cartId);
+        fetchCartData(cartId);
+        resetCheckoutTotals();
+    })
+    .catch(error => console.error('Error:', error));
+}
+
+function fetchCartData(cartId) {
+    return fetch(`/get_current_cart/${cartId}`)
+        .then(response => {
+            if (!response.ok) throw new Error('Failed to retrieve cart data');
+            return response.json();
+        })
+        .then(data => {
+            displayCartData(data);
+            setCurrentCartId(cartId);
+            setCurrentCartMenu(data.cart_menu);
+            loadProductsForSelectedCategory(String(data.cart_menu));
+            return data;
+        })
+        .catch(error => console.error('Error:', error));
+}
+
+function displayCartData(cartData) {
+    const cartViewDiv = document.getElementById('cartView');
+    if (!cartViewDiv) return;
+    
+    let address = cartData.address || "";
+    let postcode = cartData.postcode || "";
+    
+    let tableDisplay = '';
+    let mergeSpltButtons = '';
+    
+    if (cartData.order_type === 'dine') {
+        const tableLabel = cartData.table_display || cartData.table_number || '';
+        const totalCovers = cartData.total_covers || cartData.table_cover || 0;
+        
+        tableDisplay = `
+            <div class="d-flex align-items-center gap-2">
+                <i class="bi-cup-hot-fill text-muted"></i>
+                <span class="fw-semibold">${tableLabel}</span>
+                ${totalCovers > 0 ? `<span class="badge bg-secondary">${totalCovers} covers</span>` : ''}
+            </div>
+        `;
+        
+        mergeSpltButtons = `
+            <div class="btn-group btn-group-sm mt-2">
+                <button class="btn btn-outline-primary btn-sm" onclick="showEditTablesModal(${cartData.cart_id})" title="Edit">
+                    <i class="bi-pencil"></i>
+                </button>
+                <button class="btn btn-outline-success btn-sm" onclick="showMergeTablesModal(${cartData.cart_id})" title="Merge">
+                    <i class="bi-plus-square"></i>
+                </button>
+                <button class="btn btn-outline-warning btn-sm" onclick="showSplitTablesModal(${cartData.cart_id})" title="Split">
+                    <i class="bi-scissors"></i>
+                </button>
+            </div>
+        `;
+    }
+    
+    const htmlContent = `
+        <div class="d-flex justify-content-between align-items-start gap-2">
+            <div style="flex: 1; min-width: 0;">
+                <button class="btn btn-link text-dark p-0 text-start d-block w-100" 
+                        onclick="customerOrders('${cartData.customer_id}','${cartData.cart_id}', '${cartData.cart_menu}')">
+                    
+                    ${cartData.order_type !== 'dine' ? `
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="bi-person-fill text-muted"></i>
+                        <span class="fw-semibold text-truncate">${cartData.customer_name}</span>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 text-muted small">
+                        <span><i class="bi-telephone"></i> ${cartData.customer_telephone}</span>
+                        ${postcode ? `<span><i class="bi-geo-alt"></i> ${postcode}</span>` : ''}
+                    </div>
+                    ` : tableDisplay}
+                </button>
+                
+                <div class="d-flex gap-1 mt-1 flex-wrap">
+                    <button class="btn btn-dark btn-sm rounded-pill text-capitalize" 
+                            onclick="fetchPosMethods('${cartData.cart_id}')">
+                        <i class="${getOrderTypeIcon(cartData.order_type)}"></i> ${cartData.order_type}
+                    </button>
+                    ${cartData.order_type === 'dine' ? mergeSpltButtons : ''}
+                </div>
+            </div>
+            
+            <div class="d-flex flex-column align-items-end gap-1">
+                <span class="badge bg-secondary">#${cartData.cart_id}</span>
+                <button class="btn btn-outline-danger btn-sm" 
+                        onclick="confirmAction(${cartData.cart_id}, 'Delete this cart?', deleteCart)">
+                    <i class="bi-trash3"></i>
+                </button>
+            </div>
+        </div>
+    `;
+    
+    cartViewDiv.innerHTML = htmlContent;
+    fetchAndDisplayCartItems(cartData.cart_id);
+}
+
+function getOrderTypeIcon(orderType) {
+    const icons = {
+        'delivery': 'bi-truck',
+        'takeaway': 'bi-bag',
+        'waiting': 'bi-bag',
+        'dine': 'bi-shop',
+        'sale': 'bi-receipt'
+    };
+    return icons[orderType] || 'bi-cart';
+}
+
+function getCartItems(cartId) {
+    return fetch(`/get_cart_items/${cartId}`)
+        .then(response => {
+            if (response.ok) return response.json();
+            throw new Error('Failed to fetch cart items.');
+        })
+        .catch(error => {
+            console.error('Error: ', error);
+            throw error;
+        });
+}
+
+function fetchAndDisplayCartItems(cartId) {
+    const cartItemView = document.getElementById("cartItemView");
+    const cartUtilityDiv = document.getElementById("cartUtility");
+    const checkoutDiv = document.getElementById("checkoutDiv");
+
+    getCartItems(cartId)
+        .then(data => {
+            const cartItems = data.items || [];
+            const cartItemsQty = cartItems.length;
+            
+            if (cartItemsQty > 0) {
+                const cartData = data.cart_data || {};
+                let grandTotal = 0;
+                let discountableSubtotal = 0;
+                let totalItems = 0;
+
+                const listGroupHTML = cartItems.map(item => {
+                    const dataString = item.options || '';
+                    const sets = dataString ? dataString.split(', ') : [];
+
+                    let totalPrice = 0;
+                    let optionBadgeHTML = '';
+
+                    totalItems += (parseInt(item.quantity) || 0);
+
+                    sets.forEach(set => {
+                        const parts = set.split('|');
+                        const name = parts[1] || '';
+                        const price = parseFloat(parts[2]) || 0;
+                        const qty = parseInt(parts[4]) || 1;
+
+                        if (name) {
+                            const qtyLabel = qty > 1 ? (qty + 'x ') : '';
+                            optionBadgeHTML += `<span class="badge bg-info me-1">${qtyLabel}${name}</span>`;
+                        }
+                        totalPrice += price * qty;
+                    });
+
+                    const mods = (item.product_note || '')
+                        .split('|')
+                        .filter(Boolean)
+                        .map(m => `<span class="badge bg-warning me-1">${m}</span>`)
+                        .join('');
+
+                    const discountedPrice = parseFloat(calculateDiscountedPriceForCartItems(item, totalPrice)) || 0;
+                    const lineTotal = discountedPrice;
+
+                    grandTotal += lineTotal;
+
+                    const isDiscountable = (item.cpn === 1 || item.cpn === '1' || item.cpn === true);
+                    if (isDiscountable) {
+                        discountableSubtotal += lineTotal;
+                    }
+
+                    const badgeForUpdate = encodeURIComponent(optionBadgeHTML);
+                    const fullPriceBeforeItemDiscount = ((parseFloat(item.price) || 0) + totalPrice) * (parseInt(item.quantity) || 1);
+                    const perItemDiscountAmount = (fullPriceBeforeItemDiscount - lineTotal);
+
+                    return `
+                        <div class="cart-item d-flex justify-content-between align-items-start p-2 bg-white rounded mb-1"
+                             onclick="showCartModifiers('${item.cart_item_id}','${item.product_name}','${item.quantity}','${lineTotal.toFixed(2)}','${badgeForUpdate}')">
+                            <div style="flex: 1; min-width: 0;">
+                                <div class="d-flex align-items-center gap-1">
+                                    <span class="badge bg-primary">${item.quantity}</span>
+                                    <span class="text-truncate fw-medium">${item.product_name}</span>
+                                </div>
+                                <div class="mt-1 small">
+                                    ${optionBadgeHTML}${mods}
+                                </div>
+                            </div>
+                            <div class="d-flex align-items-center gap-2 ms-2">
+                                <div class="text-end">
+                                    <div class="fw-bold">£${lineTotal.toFixed(2)}</div>
+                                    ${perItemDiscountAmount > 0 ? `<small class="text-muted">-£${perItemDiscountAmount.toFixed(2)}</small>` : ''}
+                                </div>
+                                <i class="bi-x-circle-fill text-danger fs-5"
+                                   onclick="event.stopPropagation(); removeItem('${cartId}','${item.cart_item_id}',false)"
+                                   style="cursor: pointer;"></i>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                cartItemView.innerHTML = listGroupHTML;
+
+                // Update totals
+                document.getElementById("subtotalSpan").textContent = `£${grandTotal.toFixed(2)}`;
+
+                // Cart-level discount
+                let discount = 0;
+                const cartDiscountVal = parseFloat(cartData.cart_discount) || 0;
+                const cartDiscountType = cartData.cart_discount_type;
+
+                if (cartDiscountVal > 0) {
+                    if (cartDiscountType === 'fixed') {
+                        discount = Math.min(cartDiscountVal, discountableSubtotal);
+                    } else if (cartDiscountType === 'percentage') {
+                        discount = (discountableSubtotal * cartDiscountVal) / 100;
+                    }
+                }
+
+                const discountSpan = document.getElementById("discountSpan");
+                let discountText = "-";
+                if (cartDiscountType === 'fixed' && cartDiscountVal > 0) {
+                    discountText = `-£${cartDiscountVal.toFixed(2)}`;
+                } else if (cartDiscountType === 'percentage' && cartDiscountVal > 0) {
+                    discountText = `-${cartDiscountVal.toFixed(2)}%`;
+                }
+                discountSpan.textContent = discountText;
+
+                // Service charge
+                const baseForService = Math.max(0, grandTotal - discount);
+                const servicePercentOrFixed = parseFloat(cartData.cart_service_charge) || 0;
+                const serviceAmount = cartData.order_type === "dine"
+                    ? (baseForService * servicePercentOrFixed) / 100
+                    : servicePercentOrFixed;
+
+                deliveryServiceChargeDisplay(cartData.order_type, serviceAmount);
+
+                const discountedTotal = baseForService + serviceAmount;
+
+                // Update total display
+                const totalSpan = document.getElementById("totalSpan");
+                totalSpan.innerHTML = `£${discountedTotal.toFixed(2)}`;
+
+                // Update mobile cart summary
+                updateMobileCartSummary(totalItems, discountedTotal);
+
+                // Build checkout buttons
+                const noteClass = (cartData.overall_note && cartData.overall_note.length > 0) ? "info" : "secondary";
+                checkoutDiv.innerHTML = `
+                    <div class="d-flex flex-column gap-2">
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-success btn-lg flex-fill"
+                                onclick="showCheckout(${cartId}, ${discountedTotal.toFixed(2)}, ${discount.toFixed(2)}, ${serviceAmount.toFixed(2)}, this)">
+                                Charge £${discountedTotal.toFixed(2)}
+                            </button>
+                            <button class="btn btn-primary btn-lg flex-fill"
+                                onclick="completeCardCheckout(${cartId}, ${discountedTotal.toFixed(2)}, false, '${data.card_vendor}', this)">
+                                <i class="bi-credit-card"></i> Card
+                            </button>
+                        </div>
+                        <div class="d-flex gap-1">
+                            <button class="btn btn-dark flex-fill" onclick="printPosReceipt(${cartId}, this)">
+                                <i class="bi-printer-fill"></i>
+                            </button>
+                            <button class="btn btn-light flex-fill" onclick="printKitchenReceipt(${cartId}, this)">
+                                <i class="bi-cup-hot"></i>
+                            </button>
+                            <button class="btn btn-warning flex-fill" onclick="showDiscountRules(this);">
+                                <i class="bi-percent"></i>
+                            </button>
+                            <button class="btn btn-${noteClass} flex-fill" onclick="showCartNote(${cartId})">
+                                <i class="bi-file-text"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            } else {
+                cartItemView.innerHTML = `
+                    <div class="pos-cart-empty">
+                        <i class="bi-basket"></i>
+                        <p>Cart is empty</p>
+                    </div>
+                `;
+                updateMobileCartSummary(0, 0);
+            }
+        })
+        .catch(error => console.error('Fetch error:', error));
+}
+
+function calculateDiscountedPriceForCartItems(item, totalPrice) {
+    if (item.product_discount > 0) {
+        if (item.product_discount_type === 'percentage') {
+            const discountAmount = (item.product_discount / 100) * ((item.price + totalPrice) * item.quantity);
+            return ((item.price + totalPrice) * item.quantity - discountAmount).toFixed(2);
+        } else if (item.product_discount_type === 'fixed') {
+            return ((item.price + totalPrice - item.product_discount) * item.quantity).toFixed(2);
+        }
+    }
+    return ((item.price + totalPrice) * item.quantity).toFixed(2);
+}
+
+function updateMobileCartSummary(itemCount, total) {
+    const countEl = document.getElementById('cartItemCount');
+    const totalEl = document.getElementById('cartTotalSmall');
+    const chargeBtn = document.getElementById('summaryChargeBtn');
+    
+    if (countEl) countEl.textContent = `${itemCount} item${itemCount !== 1 ? 's' : ''}`;
+    if (totalEl) totalEl.textContent = `£${total.toFixed(2)}`;
+    if (chargeBtn) chargeBtn.textContent = `Charge £${total.toFixed(2)}`;
+}
+
+function deleteCart(cartId) {
+    fetch(`/delete_cart/${cartId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => {
+        if (!response.ok) throw new Error('Network response was not ok');
+        return response.json();
+    })
+    .then(data => {
+        resetCheckoutTotals();
+        collapseMobileCart();
+    })
+    .catch(error => console.error('Error:', error));
+}
+
+function removeItem(cartId, cartItemID, inModal) {
+    playSoundFile("delete.mp3");
+    fetch(`/delete_item/${cartItemID}`, { method: 'DELETE' })
+        .then(response => {
+            if (response.ok) {
+                fetchAndDisplayCartItems(cartId);
+                if (inModal) closeModal();
+            } else {
+                console.error('Failed to remove item');
+            }
+        })
+        .catch(error => console.error('Error deleting item:', error));
+}
+
+// =============================================================================
+// CART ITEM MODIFIERS
+// =============================================================================
+
+function adjustQuantity(action) {
+    const qtyInput = document.getElementById("qtyInput");
+    let currentValue = parseInt(qtyInput.value);
+
+    if (!isNaN(currentValue)) {
+        if (action === 'minus') {
+            currentValue = Math.max(currentValue - 1, 1);
+        } else if (action === 'plus') {
+            currentValue++;
+        }
+    }
+    qtyInput.value = currentValue;
+}
+
+function showCartModifiers(cartProductId, productName, quantity, productPrice, options) {
+    const badge = decodeURIComponent(options);
+    const cartId = getCurrentCartId();
+    
+    fetch('/get_mods')
+        .then(response => response.json())
+        .then(data => {
+            const modifiersHTML = data.length > 0
+                ? data.map(modifier => `
+                    <div class="col-auto mb-1">
+                        <input type="checkbox" class="btn-check mods-checkbox" id="btn-check-${modifier[0]}" autocomplete="off" value="${modifier[1]}">
+                        <label class="btn btn-outline-success btn-sm" for="btn-check-${modifier[0]}">${modifier[1]}</label>
+                    </div>`).join('')
+                : `<div class="col-auto text-muted">No modifier presets</div>`;
+
+            const productInfo = `
+                <div class="row g-3">
+                    <div class="col-12">
+                        <div class="input-group">
+                            <button class="btn btn-primary" type="button" onclick="adjustQuantity('minus')">
+                                <i class="bi-dash"></i>
+                            </button>
+                            <input type="text" id="qtyInput" class="form-control text-center" value="${quantity}" readonly style="max-width: 60px;">
+                            <button class="btn btn-primary" type="button" onclick="adjustQuantity('plus')">
+                                <i class="bi-plus"></i>
+                            </button>
+                            <button class="btn btn-danger ms-2" type="button" onclick="removeItem('${cartId}', '${cartProductId}', true)">
+                                <i class="bi-trash"></i> Remove
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small">Modifiers</label>
+                        <div class="row g-1" id="modifiers">${modifiersHTML}</div>
+                    </div>
+                    <div class="col-12">
+                        <label for="itemNote" class="form-label small">Note</label>
+                        <textarea class="form-control" id="itemNote" rows="2"></textarea>
+                    </div>
+                    ${badge ? `<div class="col-12"><small class="text-muted">Options: ${badge}</small></div>` : ''}
+                </div>
+            `;
+
+            const footer = `<button class="btn btn-success w-100" onclick="saveCartItemMods(${cartProductId})">Save Changes</button>`;
+
+            updateModal(`${productName} - £${parseFloat(productPrice).toFixed(2)}`, productInfo, footer);
+            openModal();
+        })
+        .catch(error => console.error('Error fetching data:', error));
+}
+
+function saveCartItemMods(cartItemId) {
+    const selectedCheckboxes = Array.from(document.querySelectorAll('input.mods-checkbox:checked'))
+        .map(checkbox => checkbox.value);
+    const textBoxValue = document.getElementById('itemNote').value;
+    const quantityValue = document.getElementById('qtyInput').value;
+
+    fetch('/update_modifier', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            cartItemId: cartItemId,
+            mods: selectedCheckboxes,
+            modsText: textBoxValue,
+            quantity: quantityValue
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(errorData => {
+                throw new Error(errorData.error || 'Error updating item');
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        showToast(data.message || 'Item updated successfully', true);
+        fetchAndDisplayCartItems(getCurrentCartId());
+        closeModal();
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast(error.message, false);
+    });
+}
+
+// =============================================================================
+// ORDER NOTES
+// =============================================================================
+
+function showCartNote(cartId) {
+    fetch(`/note/${cartId}`)
+        .then(response => {
+            if (!response.ok) throw new Error('Failed to fetch note');
+            return response.json();
+        })
+        .then(data => {
+            const noteModalBody = `
+                <div class="mb-3">
+                    <label for="orderNote" class="form-label">Order Note</label>
+                    <textarea class="form-control" id="orderNote" rows="4">${data.note || ''}</textarea>
+                </div>
+            `;
+            const footer = `<button class="btn btn-success w-100" onclick="saveOrderNote(${cartId}, this)">Save Note</button>`;
+
+            updateModal("Order Note", noteModalBody, footer);
+            openModal();
+        })
+        .catch(error => console.error(error));
+}
+
+function saveOrderNote(cartId, button) {
+    disableButtonWithSpinner(button);
+    const note = document.getElementById('orderNote').value;
+    
+    fetch(`/note/${cartId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note: note })
+    })
+    .then(response => {
+        if (!response.ok) throw new Error('Failed to save note');
+        return response.json();
+    })
+    .then(data => {
+        enableButtonRemoveSpinner(button);
+        closeModal();
+    })
+    .catch(error => {
+        console.error(error);
+        enableButtonRemoveSpinner(button);
+    });
+}
+
+// =============================================================================
+// CUSTOMER MANAGEMENT
+// =============================================================================
+
+function customerOrders(customerId, cartId, cartMenu) {
+    fetch(`/customer_orders/${customerId}`)
+        .then(response => {
+            if (!response.ok) throw new Error('Failed to fetch customer orders');
+            return response.json();
+        })
+        .then(data => {
+            const customerInfo = data.customer_info;
+            let guestFields = customerInfo.customer_name.toLowerCase().includes('guest') ? 'readonly' : '';
+            
+            let fullHtml = `
+                <div class="row g-2 mb-3">
+                    <div class="col-6">
+                        <input type="text" class="form-control form-control-sm" placeholder="Name" value="${customerInfo.customer_name}" id="currentCustomerName" ${guestFields}>
+                    </div>
+                    <div class="col-6">
+                        <input type="text" class="form-control form-control-sm" placeholder="Phone" value="${customerInfo.customer_telephone}" id="currentCustomerPhone" ${guestFields}>
+                    </div>
+                    <div class="col-4">
+                        <input type="text" class="form-control form-control-sm" placeholder="Postcode" value="${customerInfo.postcode}" id="currentCustomerPostcode" ${guestFields}>
+                    </div>
+                    <div class="col-8">
+                        <input type="text" class="form-control form-control-sm" placeholder="Address" value="${customerInfo.address}" id="currentCustomerAddress" ${guestFields}>
+                    </div>
+                    <input type="hidden" value="${customerInfo.address_id}" id="currentAddressId">
+                    <input type="hidden" value="${customerId}" id="currentCustomerId">
+                    <div class="col-12">
+                        <button type="button" class="btn btn-info btn-sm w-100" onclick="updateCustomerDetails(${cartId})">
+                            <i class="bi-save"></i> Save Customer
+                        </button>
+                    </div>
+                    <div class="col-12" id="updateMsg"></div>
+                </div>
+            `;
+
+            if (data.orders.length) {
+                const groupedOrders = new Map();
+
+                data.orders.forEach(order => {
+                    const orderId = order.order_id;
+                    if (!groupedOrders.has(orderId)) {
+                        groupedOrders.set(orderId, {
+                            order_details: {
+                                order_id: order.order_id,
+                                order_type: order.order_type,
+                                order_date: order.order_date
+                            },
+                            order_items: []
+                        });
+                    }
+                    groupedOrders.get(orderId).order_items.push({
+                        product_id: order.product_id,
+                        product_name: order.product_name,
+                        quantity: order.quantity,
+                        price: order.price,
+                        note: order.product_note,
+                        options: order.options,
+                        category_order: order.category_order
+                    });
+                });
+
+                fullHtml += `<div class="accordion accordion-flush" id="reorderAccordion">`;
+
+                for (const [orderId, group] of groupedOrders) {
+                    const orderDetails = group.order_details;
+                    const orderItems = group.order_items;
+
+                    let total = 0;
+                    const idsAndQuantities = [];
+                    
+                    orderItems.forEach(item => {
+                        const optionIds = [];
+                        total += item.quantity * item.price;
+
+                        if (item.options) {
+                            item.options.split(', ').forEach(option => {
+                                const optionDetails = option.split('|');
+                                const optionPrice = parseFloat(optionDetails[2]);
+                                if (!isNaN(optionPrice)) total += item.quantity * optionPrice;
+                                optionIds.push(optionDetails[0]);
+                            });
+                        }
+
+                        idsAndQuantities.push({
+                            product_id: item.product_id,
+                            quantity: item.quantity,
+                            category_order: item.category_order,
+                            note: item.note,
+                            options: optionIds
+                        });
+                    });
+
+                    fullHtml += `
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed py-2" type="button" data-bs-toggle="collapse" 
+                                    data-bs-target="#collapse-${orderDetails.order_id}">
+                                    <span class="badge bg-secondary me-2">#${orderDetails.order_id}</span>
+                                    <small>${moment(orderDetails.order_date).format('HH:mm DD/MM')}</small>
+                                    <span class="ms-auto me-2 fw-bold">£${total.toFixed(2)}</span>
+                                </button>
+                            </h2>
+                            <div id="collapse-${orderDetails.order_id}" class="accordion-collapse collapse" data-bs-parent="#reorderAccordion">
+                                <div class="accordion-body p-2">
+                                    <div class="list-group list-group-flush mb-2">
+                                        ${orderItems.map(item => `
+                                            <div class="list-group-item p-1 small">
+                                                ${item.quantity}x ${item.product_name} - £${item.price.toFixed(2)}
+                                                ${item.note ? `<br><span class="badge bg-warning">${item.note}</span>` : ''}
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                    <div class="btn-group btn-group-sm w-100">
+                                        <button class="btn btn-primary" onclick="reorder('${encodeURIComponent(JSON.stringify(idsAndQuantities))}', '${cartId}', '${cartMenu}')">
+                                            <i class="bi-arrow-repeat"></i> Reorder
+                                        </button>
+                                        <button class="btn btn-secondary" onclick="printPosReceipt(${orderDetails.order_id}, this, 'reprint')">
+                                            <i class="bi-printer"></i> Print
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+                fullHtml += `</div>`;
+            } else {
+                fullHtml += `<div class="alert alert-info">No previous orders</div>`;
+            }
+
+            updateModal("Customer Orders", fullHtml, '<button class="btn btn-danger w-100" data-bs-dismiss="modal">Close</button>');
+            openModal();
+        })
+        .catch(error => console.error(error));
+}
+
+function reorder(reorderItems, cartId, cartMenu) {
+    const decodedReorderItems = JSON.parse(decodeURIComponent(reorderItems));
+    
+    fetch('/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            reorderItems: decodedReorderItems,
+            cartId: cartId,
+            cartMenu: cartMenu
+        })
+    })
+    .then(response => {
+        if (!response.ok) throw new Error('Failed to reorder');
+        return response.json();
+    })
+    .then(data => {
+        fetchAndDisplayCartItems(cartId);
+        closeModal();
+        showToast('Items added to cart', true);
+    })
+    .catch(error => console.error('Reorder failed:', error));
+}
+
+function updateCustomerDetails(cartId) {
+    const customerDetails = {
+        name: document.getElementById('currentCustomerName').value,
+        phone: document.getElementById('currentCustomerPhone').value,
+        postcode: document.getElementById('currentCustomerPostcode').value,
+        address: document.getElementById('currentCustomerAddress').value,
+        addressId: document.getElementById('currentAddressId').value,
+        customerId: document.getElementById('currentCustomerId').value
+    };
+
+    const updateMsg = document.getElementById('updateMsg');
+
+    fetch('/update_customer_details', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(customerDetails)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            updateMsg.innerHTML = `<div class="alert alert-success alert-sm py-1 mt-2">Customer updated</div>`;
+            fetchCartData(cartId);
+        } else {
+            updateMsg.innerHTML = `<div class="alert alert-danger alert-sm py-1 mt-2">Error updating</div>`;
+        }
+    })
+    .catch(error => console.error('Error:', error));
+}
+
+// =============================================================================
+// RECENT ORDERS
+// =============================================================================
+
+function getRecentCarts(button) {
+    disableButtonWithSpinner(button);
+    const offcanvasEl = document.getElementById('lastOrdersCanvas');
+    const accordion = document.getElementById('lastOrdersAccordion');
+    const offcanvas = new bootstrap.Offcanvas(offcanvasEl);
+
+    fetch('/get_recent_orders')
+        .then(res => {
+            if (!res.ok) throw new Error('Failed to fetch');
+            return res.json();
+        })
+        .then(data => {
+            accordion.innerHTML = '';
+            
+            if (!data.length) {
+                accordion.innerHTML = `<div class="alert alert-secondary">No recent orders</div>`;
+            } else {
+                data.forEach(order => {
+                    const cartId = order.cart_id;
+                    const timeLabel = moment(order.order_date).format('HH:mm ddd Do');
+                    const orderTypeClass = {
+                        dine: 'text-bg-success',
+                        delivery: 'text-bg-warning',
+                        waiting: 'text-bg-info',
+                        takeaway: 'text-bg-info',
+                        sale: 'text-bg-primary'
+                    }[order.order_type] || 'text-bg-secondary';
+
+                    accordion.innerHTML += `
+                        <div class="accordion-item">
+                            <h2 class="accordion-header d-flex align-items-center">
+                                <button class="accordion-button collapsed flex-grow-1 py-2"
+                                        type="button" data-bs-toggle="collapse"
+                                        data-bs-target="#collapse${cartId}"
+                                        onclick="loadOrderDetails(${cartId}, this)">
+                                    <span class="badge text-bg-secondary me-1">#${cartId}</span>
+                                    <small class="text-truncate">${timeLabel}</small>
+                                    <span class="badge ${orderTypeClass} mx-1">${order.order_type}</span>
+                                    <span class="fw-bold ms-auto">£${order.total_payments.toFixed(2)}</span>
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm me-1" onclick="printPosReceipt(${cartId}, this, 'reprint')">
+                                    <i class="bi-printer"></i>
+                                </button>
+                            </h2>
+                            <div id="collapse${cartId}" class="accordion-collapse collapse" data-bs-parent="#lastOrdersAccordion">
+                                <div class="accordion-body p-2">
+                                    <div class="text-center text-muted">Loading…</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+            offcanvas.show();
+            enableButtonRemoveSpinner(button);
+        })
+        .catch(err => {
+            console.error(err);
+            enableButtonRemoveSpinner(button);
+        });
+}
+
+function loadOrderDetails(cartId, btn) {
+    const collapseEl = document.getElementById(`collapse${cartId}`);
+    const body = collapseEl.querySelector('.accordion-body');
+    body.innerHTML = `<div class="text-center text-muted">Loading…</div>`;
+
+    fetch(`/order_details/${cartId}`)
+        .then(res => {
+            if (!res.ok) throw new Error('Status ' + res.status);
+            return res.json();
+        })
+        .then(data => {
+            body.innerHTML = processCartItems(data);
+        })
+        .catch(err => {
+            console.error('Error loading details for', cartId, err);
+            body.innerHTML = `<div class="text-danger">Failed to load</div>`;
+        });
+}
+
+function processCartItems(data) {
+    if (typeof data !== 'string') data = JSON.stringify(data);
+    data = JSON.parse(data);
+
+    const processOptions = (options) => {
+        return options.split(',').map(option => {
+            const [, name, value] = option.split('|');
+            return { name, value: parseFloat(value) || 0 };
+        });
+    };
+
+    const itemsHTML = data.items.map(item => {
+        let totalValue = (item.quantity * item.price).toFixed(2);
+        let optionNames = '';
+
+        if (item.options) {
+            const opts = processOptions(item.options);
+            const extras = opts.reduce((sum, o) => sum + o.value, 0);
+            totalValue = (item.quantity * item.price + extras).toFixed(2);
+            optionNames = opts.map(o => o.name).join(', ');
+        }
+
+        return `
+            <div class="d-flex justify-content-between py-1 border-bottom">
+                <div>
+                    <span>${item.quantity}x ${item.product_name}</span>
+                    ${optionNames ? `<br><small class="text-muted">(${optionNames})</small>` : ''}
+                </div>
+                <span>£${totalValue}</span>
+            </div>
+        `;
+    });
+
+    return itemsHTML.join('');
+}
+
+// =============================================================================
+// PRINTING
+// =============================================================================
+
+function printPosReceipt(cartId, button, status = "") {
+    disableButtonWithSpinner(button);
+    return fetch(`/print/${cartId}/${status}`)
+        .then(response => {
+            if (response.ok) return response.json();
+            throw new Error('Failed to print');
+        })
+        .then(data => {
+            enableButtonRemoveSpinner(button);
+            showToast('Receipt printed', true);
+            return data;
+        })
+        .catch(error => {
+            enableButtonRemoveSpinner(button);
+            console.error('Error: ', error);
+            throw error;
+        });
+}
+
+function printKitchenReceipt(cartId, button, status = "") {
+    disableButtonWithSpinner(button);
+    return fetch(`/print_kitchen_receipt/${cartId}/${status}`)
+        .then(response => {
+            if (response.ok) return response.json();
+            throw new Error('Failed to print kitchen receipt');
+        })
+        .then(data => {
+            enableButtonRemoveSpinner(button);
+            showToast('Kitchen receipt printed', true);
+            return data;
+        })
+        .catch(error => {
+            enableButtonRemoveSpinner(button);
+            console.error('Error: ', error);
+            throw error;
+        });
+}
+
+function openCashDrawer(button) {
+    disableButtonWithSpinner(button);
+    fetch(`/open_cash_drawer`)
+        .then(response => {
+            if (!response.ok) throw new Error('Failed to open drawer');
+            return response.json();
+        })
+        .then(data => enableButtonRemoveSpinner(button))
+        .catch(error => {
+            console.error('Error:', error);
+            enableButtonRemoveSpinner(button);
+        });
+}
+
+// =============================================================================
+// MISC ITEM
+// =============================================================================
+
+async function createMiscItem(button) {
+    if (!getCurrentCartMenu()) {
+        fetchPosMethods();
+        return;
+    }
+
+    disableButtonWithSpinner(button);
+
+    try {
+        const response = await fetch('/get_misc_presets');
+        if (!response.ok) throw new Error('Failed to load presets');
+        const presets = await response.json();
+
+        const body = `
+            <div class="row g-2">
+                <div class="col-8">
+                    <label class="form-label small">Name (optional)</label>
+                    <input type="text" class="form-control" id="itemName" placeholder="e.g. Custom Item">
+                </div>
+                <div class="col-4">
+                    <label class="form-label small">Vatable</label>
+                    <select class="form-select" id="miscVatable">
+                        <option value="0" selected>No</option>
+                        <option value="1">Yes</option>
+                    </select>
+                </div>
+                <div class="col-12">
+                    <label class="form-label small">Price</label>
+                    <input type="number" step="0.01" class="form-control form-control-lg text-center" id="itemPrice" placeholder="0.00">
+                </div>
+                <div class="col-12">
+                    <label class="form-label small">Quick Presets</label>
+                    <div id="miscPresetsGrid" class="d-flex flex-wrap gap-1"></div>
+                </div>
+                <div class="col-12" id="miscItemMsg"></div>
+            </div>
+        `;
+
+        updateModal("Misc Item", body, `<button class="btn btn-success w-100" onclick="processMiscItem()"><i class="bi-plus"></i> Add Item</button>`);
+        openModal();
+        renderMiscPresets(presets);
+    } catch (error) {
+        console.error("Error loading misc presets:", error);
+    } finally {
+        enableButtonRemoveSpinner(button);
+    }
+}
+
+function renderMiscPresets(presets) {
+    const container = document.getElementById('miscPresetsGrid');
+    const commonPresets = [1.00, 1.50, 2.00, 2.50, 3.00, 5.00, 10.00];
+
+    const allPresets = [
+        ...(presets || []),
+        ...commonPresets.map(amount => [null, 'common', amount])
+    ];
+
+    container.innerHTML = allPresets.map(preset => {
+        const amount = preset[2] || preset;
+        return `<button class="btn btn-outline-primary btn-sm" onclick="applyMiscPreset(${amount})">£${amount.toFixed(2)}</button>`;
+    }).join('');
+}
+
+function applyMiscPreset(amount) {
+    document.getElementById('itemPrice').value = parseFloat(amount).toFixed(2);
+    document.getElementById('itemName').focus();
+}
+
+function processMiscItem() {
+    let itemName = document.getElementById("itemName").value.trim();
+    const itemPrice = parseFloat(document.getElementById("itemPrice").value);
+    const miscVatable = document.getElementById('miscVatable').value;
+    const msgEl = document.getElementById("miscItemMsg");
+
+    if (isNaN(itemPrice) || itemPrice <= 0) {
+        msgEl.innerHTML = `<div class="alert alert-danger py-1 mt-2">Enter a valid price</div>`;
+        return;
+    }
+
+    if (!itemName) itemName = "Misc Item";
+    const itemId = generateUniqueInt();
+    
+    addToCart(itemId, itemName, itemPrice, "null", 1, miscVatable);
+    closeModal();
+}
+
+// =============================================================================
+// DELIVERY
+// =============================================================================
+
+function getDeliveryPrice() {
+    const postcode = document.getElementById('customerPostcode').value;
+    const address = document.getElementById('customerAddress').value;
+    const deliveryPriceInput = document.getElementById('deliveryPrice');
+    const postcodeInput = document.getElementById('customerPostcode');
+    const respBlock = document.getElementById('postcodeResponse');
+    const addressDistance = document.getElementById('addressDistance');
+
+    if (postcode) {
+        fetch('/get_delivery_price', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ postcode, address, customerId })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                respBlock.innerHTML = `<div class="alert alert-danger py-1">${data.error}</div>`;
+            } else {
+                respBlock.innerHTML = `Delivery: £${data.price.toFixed(2)} (${data.distance} miles)`;
+                postcodeInput.classList.remove('border-danger');
+                deliveryPriceInput.value = data.price.toFixed(2);
+                addressDistance.value = data.distance;
+            }
+        })
+        .catch(error => console.error('Error:', error));
+    } else {
+        postcodeInput.classList.add('border-danger');
+    }
+}
+
+function hideAllCustomerInputFields() {
+    document.getElementById("inputsForAll").style.display = "none";
+    document.getElementById("inputsForDelivery").style.display = "none";
+}
+
+function showAllCustomerInputFields() {
+    document.getElementById("inputsForAll").style.display = "flex";
+    document.getElementById("inputsForDelivery").style.display = "flex";
+    document.getElementById('postcodeSearch').disabled = false;
+}
+
+function showAllCustomerInputExceptDeliveryFields() {
+    document.getElementById("inputsForAll").style.display = "flex";
+    document.getElementById("inputsForDelivery").style.display = "none";
+    document.getElementById('postcodeSearch').disabled = true;
+}
+
+// =============================================================================
+// CHECKOUT & PAYMENTS
+// =============================================================================
+
+function fetch_payment_methods() {
+    return fetch(`/fetch_payment_methods`)
+        .then(response => {
+            if (response.ok) return response.json();
+            throw new Error('Failed to fetch payment methods');
+        })
+        .catch(error => {
+            console.error('Error: ', error);
+            throw error;
+        });
+}
+
+function completeCheckout(cartId, discountedTotal, print, button) {
+    disableButtonWithSpinner(button);
+    const paymentMethod = getSelectedPaymentMethod().trim();
+    const balanceElement = document.getElementById('balance');
+    const currentBalance = parseFloat(balanceElement.textContent);
+    const balanceMsg = document.getElementById('balanceMsg');
+    const tendered = document.getElementById('tendered').innerText;
+    const changeDue = document.getElementById('changeDue').value;
+
+    let dataToSend = { cartId, paymentMethod, discountedTotal, print };
+
+    if (currentBalance > 0) {
+        balanceMsg.innerHTML = "<strong>Balance remains</strong>";
+        enableButtonRemoveSpinner(button);
+        return;
+    }
+    
+    if (paymentMethod === "Split") {
+        if (splitCharges.length > 0 && currentBalance == 0) {
+            dataToSend.splitCharges = splitCharges;
+        } else {
+            document.getElementById('splitMessages').textContent = "Balance is still remaining.";
+            enableButtonRemoveSpinner(button);
+            return;
+        }
+    }
+    
+    if (paymentMethod === "Cash") {
+        dataToSend.tendered = tendered;
+        dataToSend.change = changeDue;
+    }
+
+    fetch('/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dataToSend)
+    })
+    .then(response => response.json())
+    .then(data => {
+        resetCheckoutTotals();
+        enableButtonRemoveSpinner(button);
+        closeModal();
+        collapseMobileCart();
+    })
+    .catch(error => {
+        enableButtonRemoveSpinner(button);
+        console.error('Error:', error);
+    });
+}
+
+let modalHideHandler = null;
+
+function completeCardCheckout(cartId, discountedTotal, print, cardType, button, isRetry = false) {
+    disableButtonWithSpinner(button);
+
+    let dataToSend = { cartId, paymentMethod: cardType, discountedTotal, print };
+    let endpoint = cardType === "Card" ? "/checkout" : "/prepare_card_transaction";
+
+    if (cardType == "Card") {
+        fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(dataToSend)
+        })
+        .then(response => response.json())
+        .then(data => {
+            resetCheckoutTotals();
+            enableButtonRemoveSpinner(button);
+            collapseMobileCart();
+        })
+        .catch(error => {
+            enableButtonRemoveSpinner(button);
+            console.error('Error:', error);
+        });
+        return;
+    }
+
+    if (!isRetry) {
+        updateModal("Card Payment", `
+            <div class="text-center py-4">
+                <i class="bi bi-tablet-landscape fs-1 text-primary"></i>
+                <div class="alert alert-primary mt-3" id="cardModalMsg">
+                    Present card reader to customer...
+                </div>
+                <div class="spinner-border text-info" role="status" id="cardSpinner"></div>
+                <div id="retryButtonContainer" class="mt-3"></div>
+                <button class="btn btn-danger mt-2 d-none" id="terminalCancelButton" onclick="cancelCardTransaction()">
+                    <span id="terminalButtonText">Cancel</span>
+                    <div id="terminalButtonSpinner" class="spinner-grow spinner-grow-sm d-none" role="status"></div>
+                </button>
+            </div>
+        `, "", 'modal-sm');
+        openModal();
+        setTimeout(() => {
+            const cancelButton = document.getElementById('terminalCancelButton');
+            if (cancelButton) cancelButton.classList.remove('d-none');
+        }, 4000);
+    } else {
+        document.getElementById('cardModalMsg').innerHTML = `Present reader to customer...`;
+        document.getElementById('cardSpinner').style.display = "inline-block";
+        document.getElementById('retryButtonContainer').innerHTML = "";
+    }
+
+    const modal = document.getElementById('myModal');
+    if (modalHideHandler) {
+        modal.removeEventListener('hide.bs.modal', modalHideHandler);
+    }
+    modalHideHandler = function () {
+        cancelCardTransaction();
+        modal.removeEventListener('hide.bs.modal', modalHideHandler);
+    };
+    modal.addEventListener('hide.bs.modal', modalHideHandler);
+
+    fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dataToSend)
+    })
+    .then(response => response.json())
+    .then(data => {
+        let cardMsgModal = document.getElementById('cardModalMsg');
+        let cardSpinner = document.getElementById('cardSpinner');
+        let retryButtonContainer = document.getElementById('retryButtonContainer');
+        let cancelButton = document.getElementById('terminalCancelButton');
+
+        if (cardMsgModal) {
+            let alertClass = data.status === "success" ? "alert alert-success" : "alert alert-warning";
+            cardMsgModal.className = alertClass;
+            cardMsgModal.innerHTML = data.message;
+
+            if (data.status === "success") {
+                cardSpinner.style.display = "none";
+                retryButtonContainer.innerHTML = "";
+                if (cancelButton) cancelButton.classList.add('d-none');
+                resetCheckoutTotals();
+                enableButtonRemoveSpinner(button);
+                
+                let countDown = 3;
+                let countDownInterval = setInterval(() => {
+                    cardMsgModal.innerHTML = `${data.message}<br>Closing in ${countDown}...`;
+                    countDown--;
+                    if (countDown < 0) {
+                        clearInterval(countDownInterval);
+                        closeModal();
+                        collapseMobileCart();
+                    }
+                }, 1000);
+            } else {
+                if (data.status == "error") cancelCardTransaction(data.message);
+                cardSpinner.style.display = "none";
+                retryButtonContainer.innerHTML = `
+                    <button class="btn btn-warning" onclick="completeCardCheckout('${cartId}', '${discountedTotal}', '${print}', '${cardType}', this, true)">Try Again</button>
+                    <button class="btn btn-secondary ms-2" data-bs-dismiss="modal">Close</button>
+                `;
+            }
+        }
+        enableButtonRemoveSpinner(button);
+    })
+    .catch(error => {
+        enableButtonRemoveSpinner(button);
+        console.error('Error:', error);
+    });
+}
+
+function cancelCardTransaction(message = "") {
+    const button = document.getElementById('terminalCancelButton');
+    const terminalButtonText = document.getElementById('terminalButtonText');
+    const spinner = document.getElementById('terminalButtonSpinner');
+
+    if (button) button.disabled = true;
+    if (terminalButtonText) terminalButtonText.classList.add('d-none');
+    if (spinner) spinner.classList.remove('d-none');
+
+    fetch('/cancel_card_transaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        const msgEl = document.getElementById('cardModalMsg');
+        if (msgEl) msgEl.innerHTML = message || "Transaction cancelled";
+        if (button) button.style.display = 'none';
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        if (button) button.disabled = false;
+        if (terminalButtonText) terminalButtonText.classList.remove('d-none');
+        if (spinner) spinner.classList.add('d-none');
+    });
+}
+
+// =============================================================================
+// CUSTOMER & POSTCODE SEARCH
+// =============================================================================
+
+function initCustomerSearch(modalSelector = '#myModal') {
+    const modal = document.querySelector(modalSelector);
+    if (!modal) return;
+
+    let debounceTimer = null;
+
+    modal.addEventListener('input', function (event) {
+        if (event.target.id !== 'customerSearch') return;
+
+        clearTimeout(debounceTimer);
+        const inputText = event.target.value.trim();
+
+        if (inputText.length < 3) {
+            document.getElementById('customerSuggestionsContainer').innerHTML = '';
+            return;
+        }
+
+        debounceTimer = setTimeout(() => {
+            fetch('/get_customer_info', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ searchText: inputText })
+            })
+            .then(r => r.json())
+            .then(results => renderCustomerSuggestions(results))
+            .catch(err => console.error('Customer lookup error:', err));
+        }, 250);
+    });
+}
+
+function renderCustomerSuggestions(data) {
+    const container = document.getElementById('customerSuggestionsContainer');
+    container.innerHTML = '';
+
+    if (!Array.isArray(data) || data.length === 0) return;
+
+    let html = `<ul class="list-group">`;
+    html += `<li class="list-group-item list-group-item-danger" onclick="document.getElementById('customerSuggestionsContainer').innerHTML = '';">Close <i class="bi bi-x-circle float-end"></i></li>`;
+
+    data.forEach(item => {
+        const name = item.customer_name || '';
+        const phone = item.customer_telephone || '';
+        const address = item.address || '';
+        const postcode = item.postcode || '';
+        const customerId = item.customer_id || '';
+        const addressId = item.address_id || '';
+
+        if (!name && !phone && !address && !postcode) return;
+
+        const display = [name, phone, address, postcode].filter(Boolean).join(', ');
+
+        html += `
+            <li class="list-group-item list-group-item-action"
+                onclick="fillCustomerFromSuggestion('${escapeJS(name)}', '${escapeJS(phone)}', '${escapeJS(address)}', '${escapeJS(postcode)}', '${customerId}', '${addressId}')">
+                ${display}
+            </li>
+        `;
+    });
+
+    html += `</ul>`;
+    container.innerHTML = html;
+}
+
+function fillCustomerFromSuggestion(name, phone, address, postcode, customerId, addressId) {
+    const nameEl = document.getElementById('customerName');
+    const phoneEl = document.getElementById('customerPhone');
+    const addressEl = document.getElementById('customerAddress');
+    const postcodeEl = document.getElementById('customerPostcode');
+    const customerIdEl = document.getElementById('customerId');
+    const addressIdEl = document.getElementById('addressId');
+    const container = document.getElementById('customerSuggestionsContainer');
+
+    if (nameEl) nameEl.value = name;
+    if (phoneEl) phoneEl.value = phone;
+    if (addressEl) addressEl.value = address;
+    if (postcodeEl) postcodeEl.value = postcode;
+    if (customerIdEl) customerIdEl.value = customerId;
+    if (addressIdEl) addressIdEl.value = addressId;
+    if (container) container.innerHTML = '';
+    
+    const searchEl = document.getElementById('customerSearch');
+    if (searchEl) searchEl.value = '';
+}
+
+function escapeJS(str) {
+    return String(str || '').replace(/'/g, "\\'").replace(/\n/g, ' ');
+}
+
+function initPostcodeSearch(modalSelector = '#myModal') {
+    const modal = document.querySelector(modalSelector);
+    if (!modal) return;
+
+    let postcodeTimeout = null;
+
+    modal.addEventListener('input', function (event) {
+        if (event.target.id !== 'postcodeSearch') return;
+
+        clearTimeout(postcodeTimeout);
+        const query = event.target.value.trim();
+
+        if (query.length < 3) {
+            document.getElementById('suggestionsContainer').innerHTML = '';
+            return;
+        }
+
+        postcodeTimeout = setTimeout(() => {
+            fetch('/get_postcode_info', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `ps=${encodeURIComponent(query)}`
+            })
+            .then(r => r.json())
+            .then(data => renderPostcodeSuggestions(data))
+            .catch(err => console.error('Postcode lookup error:', err));
+        }, 300);
+    });
+}
+
+function renderPostcodeSuggestions(data) {
+    const container = document.getElementById('suggestionsContainer');
+    container.innerHTML = '';
+
+    if (!data?.Items || !Array.isArray(data.Items)) return;
+
+    const addresses = data.Items.filter(item => item.Type === 'Address');
+    if (addresses.length === 0) return;
+
+    let html = `<ul class="list-group">`;
+    html += `<li class="list-group-item list-group-item-danger" onclick="document.getElementById('suggestionsContainer').innerHTML = '';">Close <i class="bi bi-x-circle float-end"></i></li>`;
+
+    addresses.forEach(addr => {
+        const fullText = `${addr.Text} ${addr.Description}`;
+        const addressEncoded = encodeURIComponent(addr.Text);
+        const postcodeEncoded = encodeURIComponent(addr.Description);
+
+        html += `
+            <li class="list-group-item list-group-item-action"
+                onclick="fillPostcodeAddress(decodeURIComponent('${addressEncoded}'), decodeURIComponent('${postcodeEncoded}'))">
+                ${fullText}
+            </li>
+        `;
+    });
+
+    html += `</ul>`;
+    container.innerHTML = html;
+}
+
+function fillPostcodeAddress(address, postcode) {
+    const addressEl = document.getElementById('customerAddress');
+    const postcodeEl = document.getElementById('customerPostcode');
+    const container = document.getElementById('suggestionsContainer');
+    
+    if (addressEl) addressEl.value = address;
+    if (postcodeEl) postcodeEl.value = postcode;
+    if (container) container.innerHTML = '';
+    
+    const searchEl = document.getElementById('postcodeSearch');
+    if (searchEl) searchEl.value = '';
+    
+    getDeliveryPrice();
+}
+
+// =============================================================================
+// SERVICE CHARGE DISPLAY
+// =============================================================================
+
+function deliveryServiceChargeDisplay(orderType, serviceAmount) {
+    const serviceSpan = document.getElementById('serviceSpan');
+    const deliveryServiceSpan = document.getElementById('deliveryServiceSpan');
+    
+    if (serviceSpan) {
+        serviceSpan.textContent = `£${serviceAmount.toFixed(2)}`;
+    }
+    
+    if (deliveryServiceSpan) {
+        const label = deliveryServiceSpan.querySelector('span:first-child') || deliveryServiceSpan;
+        if (orderType === 'delivery') {
+            if (label.textContent !== undefined) label.textContent = 'Delivery';
+        } else if (orderType === 'dine') {
+            if (label.textContent !== undefined) label.textContent = 'Service';
+        } else {
+            if (label.textContent !== undefined) label.textContent = 'Service';
+        }
+    }
+}
+
+// =============================================================================
+// UTILITY FUNCTIONS
+// =============================================================================
+
+function generateUniqueInt() {
+    return Date.now() + Math.floor(Math.random() * 1000);
+}
+
+function confirmAction(id, message, callback) {
+    Swal.fire({
+        title: 'Confirm',
+        text: message,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'Yes'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            callback(id);
+        }
+    });
+}
+
+// =============================================================================
+// INITIALIZATION
+// =============================================================================
+
+document.addEventListener('DOMContentLoaded', function () {
+    // Initialize sound settings if function exists
+    if (typeof initializeSoundSetting === 'function') {
+        initializeSoundSetting();
+    }
+
+    // Category button clicks
+    document.querySelectorAll('.category-btn').forEach(function (button) {
+        button.addEventListener('click', function () {
+            if (typeof playSoundFile === 'function') {
+                playSoundFile("stop.mp3");
+            }
+
+            // Remove active from all, add to clicked
+            document.querySelectorAll('.pos-category-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+
+            const categoryId = this.getAttribute('data-category-id');
+            const categoryColour = this.getAttribute('data-category-colour');
+            const currentMenu = getCurrentCartMenu();
+            loadProducts(categoryId, currentMenu, categoryColour);
+        });
+    });
+
+    // Load existing cart if present
+    const currentCart = getCurrentCartId();
+    if (currentCart) {
+        fetchCartData(currentCart);
+    }
+
+    const currentMenu = getCurrentCartMenu();
+    if (currentMenu) {
+        if (typeof loadProductsForSelectedCategory === 'function') {
+            loadProductsForSelectedCategory(currentMenu);
+        }
+    }
+
+    // Initialize customer search
+    initCustomerSearch();
+    initPostcodeSearch();
+});
+    
+</script>
+{% endblock %}
