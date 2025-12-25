@@ -384,6 +384,33 @@ def create_pos_database():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_menu_categories_menu ON menu_categories(menu_id, sort)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_menu_categories_cat  ON menu_categories(category_id)")
 
+        # Create dining_rooms table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS dining_rooms (
+                room_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                room_label TEXT NOT NULL UNIQUE,
+                room_order INTEGER DEFAULT 0
+            )
+        ''')
+
+        # Add room_id to dining_tables (if not exists)
+        cursor.execute("PRAGMA table_info(dining_tables)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if 'room_id' not in columns:
+            cursor.execute('ALTER TABLE dining_tables ADD COLUMN room_id INTEGER REFERENCES dining_rooms(room_id)')
+
+        # Add table_id to cart_dining_tables (if not exists)  
+        cursor.execute("PRAGMA table_info(cart_dining_tables)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if 'table_id' not in columns:
+            cursor.execute('ALTER TABLE cart_dining_tables ADD COLUMN table_id INTEGER REFERENCES dining_tables(table_id)')
+
+        # Add print_group to category table (if not exists)
+        cursor.execute("PRAGMA table_info(category)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if 'print_group' not in columns:
+            cursor.execute('ALTER TABLE category ADD COLUMN print_group INTEGER DEFAULT 1')
+
         # Commit the changes and close the connection
         conn.commit()
         conn.close()
@@ -394,6 +421,7 @@ def create_pos_database():
     except sqlite3.Error as e:
         print("Error:", e)
         return jsonify({"error": str(e)}), 500
+
 
 def empty_product_categories():
     try:
@@ -453,13 +481,9 @@ def empty_options_items():
 def get_all_categories():
     try:
         conn, cursor = get_database_connection()
-
-        # Check if the category table exists
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='category'")
         table_exists = cursor.fetchone()
-
         if not table_exists:
-            # Return an empty dictionary if the category table doesn't exist
             return {}
         
         cursor.execute('''SELECT
@@ -468,7 +492,8 @@ def get_all_categories():
             c.category_colour,
             c.category_text_colour,
             COUNT(CASE WHEN p.is_hidden = 0 THEN p.product_id END) AS product_count,
-            c.category_order
+            c.category_order,
+            COALESCE(c.print_group, 1) AS print_group
         FROM
             category c
         LEFT JOIN
@@ -482,12 +507,12 @@ def get_all_categories():
         ''')
         categories = cursor.fetchall()
         conn.close()
-        categories_data = [{'category_id': row[0], 'category_name': row[1], 'category_colour': row[2], 'category_text_colour': row[3], 'product_count': row[4], 'category_order': row[5]} for row in categories]
+        categories_data = [{'category_id': row[0], 'category_name': row[1], 'category_colour': row[2], 'category_text_colour': row[3], 'product_count': row[4], 'category_order': row[5], 'print_group': row[6]} for row in categories]
         return categories_data
     except Exception as e:
         return [{'error': str(e)}]
 
-def add_or_update_category(category, colour, text_colour, category_order=None, category_id=None, delete_category=None):
+def add_or_update_category(category, colour, text_colour, category_order=None, category_id=None, delete_category=None, print_group=1):
     try:
         conn, cursor = get_database_connection()
         if category_id and delete_category:
@@ -497,13 +522,13 @@ def add_or_update_category(category, colour, text_colour, category_order=None, c
             )
         elif category_id:
             cursor.execute(
-                "UPDATE category SET category_name = ?, category_colour = ?, category_text_colour = ?, category_order = ? WHERE category_id = ?",
-                (category.title(), colour, text_colour, category_order, category_id)
+                "UPDATE category SET category_name = ?, category_colour = ?, category_text_colour = ?, category_order = ?, print_group = ? WHERE category_id = ?",
+                (category.title(), colour, text_colour, category_order, print_group, category_id)
             )
         else:
             cursor.execute(
-                "INSERT INTO category (category_name, category_colour, category_text_colour) VALUES (?, ?, ?)",
-                (category.title(), colour, text_colour)
+                "INSERT INTO category (category_name, category_colour, category_text_colour, print_group) VALUES (?, ?, ?, ?)",
+                (category.title(), colour, text_colour, print_group)
             )
         conn.commit()
         conn.close()
@@ -785,6 +810,7 @@ def fix_guest_customer():
         print(f"Error fixing guest customer: {str(e)}")
 
 def new_cart(cartData):
+    """Updated to handle both single table and tables array"""
     conn = None
     try:
         data = cartData
@@ -799,6 +825,9 @@ def new_cart(cartData):
         current_menu = cartData['current_menu']
        
         conn.execute("BEGIN TRANSACTION")
+        
+        address_id = None
+        
         if data['order_type'] == "dine":
             service_charge = json_utils.service_charge()
             customer_id = get_guest_customer()
@@ -815,12 +844,12 @@ def new_cart(cartData):
         if 'customerAddress' in customer and customer['customerAddress'] != '' and 'customerPostcode' in customer and customer['customerPostcode'] != '' and customer['addressId'] == "":
             address = customer['customerAddress']
             postcode = customer['customerPostcode']
-            distance = customer['addressDistance']
+            distance = customer.get('addressDistance', 0)
             cursor.execute('''
-            INSERT INTO customer_addresses (customer_id, address, postcode, distance)
-            VALUES (?, ?, ?, ?)
-        ''', (customer_id, address, postcode, distance))
-        address_id = cursor.lastrowid
+                INSERT INTO customer_addresses (customer_id, address, postcode, distance)
+                VALUES (?, ?, ?, ?)
+            ''', (customer_id, address, postcode, distance))
+            address_id = cursor.lastrowid
             
         if 'addressId' in customer and customer['addressId'] != '' and data['order_type'] == "delivery":
             address_id = customer['addressId']
@@ -832,22 +861,46 @@ def new_cart(cartData):
         cursor.execute('''
             INSERT INTO cart (order_type, order_menu, order_date, overall_note, customer_id, cart_service_charge, cart_started_by, address_id)
             VALUES (?, ?, datetime('now', 'localtime'), ?, ?, ?, ?, ?)
-            ''', (data['order_type'], data['order_menu'], data['overall_note'], customer_id, service_charge, employee_id, address_id if data['order_type'] == "delivery" else ""))
+            ''', (data['order_type'], data['order_menu'], data.get('overall_note', ''), customer_id, service_charge, employee_id, address_id if data['order_type'] == "delivery" else ""))
         
         cart_id = cursor.lastrowid
+        
+        # Handle dine-in tables (supports both single and multiple)
         if data['order_type'] == "dine":
-            table = customer.get('table', '')
-            cover = customer.get('cover', 0)
-            cursor.execute(
-                "UPDATE dining_tables SET table_occupied = ? WHERE table_number = ?",
-                (cart_id, table)
-            )
+            tables = customer.get('tables', [])
+            
+            # If using old single-table format, convert to array
+            if not tables and customer.get('table'):
+                tables = [{
+                    'table_number': customer.get('table'),
+                    'table_id': None,  # Will lookup by table_number
+                    'cover': customer.get('cover', 0)
+                }]
+            
+            for table_data in tables:
+                table_number = table_data.get('table_number')
+                table_id = table_data.get('table_id')
+                cover = int(table_data.get('cover', 0))
+                
+                # If no table_id, look it up
+                if not table_id and table_number:
+                    cursor.execute('SELECT table_id FROM dining_tables WHERE table_number = ?', (table_number,))
+                    result = cursor.fetchone()
+                    table_id = result[0] if result else None
+                
+                # Mark table as occupied
+                cursor.execute(
+                    "UPDATE dining_tables SET table_occupied = ? WHERE table_number = ?",
+                    (cart_id, table_number)
+                )
+                
+                # Insert into junction table
+                cursor.execute('''
+                    INSERT INTO cart_dining_tables (cart_id, table_id, table_number, table_cover)
+                    VALUES (?, ?, ?, ?)
+                ''', (cart_id, table_id, table_number, cover))
 
-            cursor.execute('''
-                INSERT INTO cart_dining_tables (cart_id, table_number, table_cover)
-                VALUES (?, ?, ?)
-            ''', (cart_id, table, cover))
-
+        # Handle cart transfer (menu change) - price recalculation
         if posted_cart_id and current_menu != data['order_menu']:
             first_query = f"SELECT product_id, options FROM cart_item WHERE cart_id = {posted_cart_id}"
             cursor.execute(first_query)
@@ -870,14 +923,12 @@ def new_cart(cartData):
                     for option in options_list:
                         try:
                             option_id, name, _, option_set, quantity, vatable = option.split('|')
-                            # Convert to proper types
                             option_id = int(option_id)
                             option_set = int(option_set)
                             quantity = int(quantity)
                             vatable = bool(int(vatable))
                         except ValueError as e:
                             log_error(f"Skipping malformed option: {option} - Error: {str(e)}")
-                            print(f"Skipping malformed option: {option} - Error: {str(e)}")
                             continue
                         
                         if not option_id:
@@ -892,7 +943,6 @@ def new_cart(cartData):
                             updated_option = f"{option_id}|{name}|{new_price}|{option_set}|{quantity}|{int(vatable)}"
                             new_options.append(updated_option)
                         except Exception as e:
-                            print(f"Failed to process option {option_id}: {str(e)}")
                             log_error(f"Failed to process option {option_id}: {str(e)}")
                             continue
 
@@ -902,22 +952,25 @@ def new_cart(cartData):
 
                 parameters_list.append((new_item_price, updated_options_str, posted_cart_id, product_id))
 
-            # Execute the update_query using executemany
             update_query = "UPDATE cart_item SET price = ?, options = ? WHERE cart_id = ? AND product_id = ?"
             cursor.executemany(update_query, parameters_list)
-        cursor.execute('''
-            UPDATE cart_item SET cart_id = ? WHERE cart_id = ?
-        ''', (cart_id, posted_cart_id))
+        
+        # Transfer items from old cart
+        cursor.execute('UPDATE cart_item SET cart_id = ? WHERE cart_id = ?', (cart_id, posted_cart_id))
 
+        # Transfer notes
         cursor.execute('SELECT overall_note FROM cart WHERE cart_id = ?', (posted_cart_id,))
         source_overall_note = cursor.fetchone()
         if source_overall_note is not None:
             cursor.execute('UPDATE cart SET overall_note = ? WHERE cart_id = ?', (source_overall_note[0], cart_id))
 
-        cursor.execute("UPDATE dining_tables SET table_occupied = ? WHERE table_occupied = ?", (0, posted_cart_id))
-
+        # Clear old cart's tables
+        cursor.execute("UPDATE dining_tables SET table_occupied = 0 WHERE table_occupied = ?", (posted_cart_id,))
+        
+        # Delete old cart
         cursor.execute('DELETE FROM cart WHERE cart_id = ?', (posted_cart_id,))
         cursor.execute('DELETE FROM cart_dining_tables WHERE cart_id = ?', (posted_cart_id,))
+        
         conn.commit()
         log_deleted_cart(posted_cart_id)
         return jsonify({'cart_id': cart_id})
@@ -957,17 +1010,6 @@ def get_current_cart_data(cart_id):
                     THEN ca.postcode
                     ELSE NULL
                 END AS postcode,
-                CASE
-                    WHEN c.order_type = 'dine'
-                    THEN (SELECT table_number FROM cart_dining_tables WHERE cart_id = c.cart_id)
-                    ELSE NULL
-                END AS table_number,
-                CASE
-                    WHEN c.order_type = 'dine'
-                    THEN (SELECT table_cover FROM cart_dining_tables WHERE cart_id = c.cart_id
-                    )
-                    ELSE NULL
-                END AS cover,
                 c.cart_charge_updated,
                 e.name
             FROM cart c
@@ -976,12 +1018,22 @@ def get_current_cart_data(cart_id):
             LEFT JOIN customer_addresses ca ON ca.address_id = c.address_id
             LEFT JOIN employees e ON cart_started_by = e.employee_id
             WHERE c.cart_id = ?
-            GROUP BY c.cart_id, c.order_type, c.order_menu, c.order_date, cu.customer_name, cu.customer_telephone, address, postcode, table_number, cover
+            GROUP BY c.cart_id
             ORDER BY c.order_date;
             ''', (cart_id,))
-
+        
         cart_data = cursor.fetchone()
         if cart_data:
+            # Get tables for dine-in orders
+            tables = []
+            table_display = None
+            total_covers = 0
+            
+            if cart_data[1] == 'dine':  # order_type
+                tables = get_cart_tables(cart_id)
+                table_display = format_table_display(tables)
+                total_covers = sum(t.get('cover', 0) for t in tables)
+            
             cart_dict = {
                 'cart_id': cart_data[0],
                 'order_type': cart_data[1],
@@ -994,21 +1046,25 @@ def get_current_cart_data(cart_id):
                 'address_id': cart_data[8],
                 'address': cart_data[9],
                 'postcode': cart_data[10],
-                'table_number': cart_data[11],
-                'table_cover': cart_data[12],
-                'charge_updated': cart_data[13],
-                'employee_name': cart_data[14]
+                'charge_updated': cart_data[11],
+                'employee_name': cart_data[12],
+                # New multi-table fields
+                'table_display': table_display,
+                'total_covers': total_covers,
+                # Legacy fields for backwards compatibility
+                'table_number': table_display or (tables[0]['table_number'] if tables else None),
+                'table_cover': total_covers or (tables[0]['cover'] if tables else None)
             }
             conn.close()
             return jsonify(cart_dict)
         else:
-            # Cart not found
             conn.close()
             return jsonify({'error': 'Cart not found'}), 404
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 def all_carts():
+    """Updated to show merged tables in display"""
     try:
         conn, cursor = get_database_connection()
         cursor.execute('''  
@@ -1019,11 +1075,7 @@ def all_carts():
                 c.order_date,
                 c.customer_id,
                 COUNT(ci.cart_id) AS cart_item_count,
-                cu.customer_name,
-                CASE 
-                    WHEN c.order_type = "dine" THEN (SELECT table_number FROM dining_tables d WHERE table_occupied = c.cart_id)
-                    ELSE NULL
-                END AS table_number
+                cu.customer_name
             FROM cart c
             LEFT JOIN cart_item ci ON c.cart_id = ci.cart_id
             LEFT JOIN customers cu ON c.customer_id = cu.customer_id
@@ -1033,11 +1085,26 @@ def all_carts():
         ''')
         
         results = cursor.fetchall()
+        
+        # For dine-in orders, get table display
+        enriched_results = []
+        for row in results:
+            cart_id = row[0]
+            order_type = row[1]
+            
+            table_display = None
+            if order_type == 'dine':
+                tables = get_cart_tables(cart_id)
+                table_display = format_table_display(tables)
+            
+            # Convert to tuple with table_display added
+            enriched_results.append(row + (table_display,))
+        
         conn.close()
-        return results
+        return enriched_results
     except Exception as e:
         return []
-    
+
 def fetch_option_data(option_id, current_menu,product_id):
     try:
         conn, cursor = get_database_connection()
@@ -1197,6 +1264,1054 @@ def get_item_by_barcode(barcode):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# ============================================
+# ROOM CRUD FUNCTIONS
+# ============================================
+
+# def create_dining_rooms_table():
+#     """Create the dining_rooms table if it doesn't exist"""
+#     try:
+#         conn, cursor = get_database_connection()
+#         cursor.execute('''
+#             CREATE TABLE IF NOT EXISTS dining_rooms (
+#                 room_id INTEGER PRIMARY KEY AUTOINCREMENT,
+#                 room_label TEXT NOT NULL UNIQUE,
+#                 room_order INTEGER DEFAULT 0
+#             )
+#         ''')
+#         conn.commit()
+#         conn.close()
+#         return True
+#     except Exception as e:
+#         print(f"Error creating dining_rooms table: {e}")
+#         return False
+
+# def migrate_dining_tables_add_room_id():
+#     """Add room_id column to dining_tables if it doesn't exist"""
+#     try:
+#         conn, cursor = get_database_connection()
+#         # Check if column exists
+#         cursor.execute("PRAGMA table_info(dining_tables)")
+#         columns = [col[1] for col in cursor.fetchall()]
+        
+#         if 'room_id' not in columns:
+#             cursor.execute('ALTER TABLE dining_tables ADD COLUMN room_id INTEGER REFERENCES dining_rooms(room_id)')
+#             conn.commit()
+#         conn.close()
+#         return True
+#     except Exception as e:
+#         print(f"Error migrating dining_tables: {e}")
+#         return False
+
+# def migrate_cart_dining_tables_add_table_id():
+#     """Add table_id column to cart_dining_tables if it doesn't exist"""
+#     try:
+#         conn, cursor = get_database_connection()
+#         cursor.execute("PRAGMA table_info(cart_dining_tables)")
+#         columns = [col[1] for col in cursor.fetchall()]
+        
+#         if 'table_id' not in columns:
+#             cursor.execute('ALTER TABLE cart_dining_tables ADD COLUMN table_id INTEGER REFERENCES dining_tables(table_id)')
+#             conn.commit()
+#         conn.close()
+#         return True
+#     except Exception as e:
+#         print(f"Error migrating cart_dining_tables: {e}")
+#         return False
+
+def get_all_rooms():
+    """Get all dining rooms ordered by room_order"""
+    try:
+        conn, cursor = get_database_connection()
+        cursor.execute('SELECT room_id, room_label, room_order FROM dining_rooms ORDER BY room_order, room_label')
+        rooms = cursor.fetchall()
+        conn.close()
+        return [{'room_id': r[0], 'room_label': r[1], 'room_order': r[2]} for r in rooms]
+    except Exception as e:
+        print(f"Error getting rooms: {e}")
+        return []
+
+def add_room(room_label):
+    """Add a new dining room"""
+    try:
+        conn, cursor = get_database_connection()
+        # Get max order
+        cursor.execute('SELECT COALESCE(MAX(room_order), 0) + 1 FROM dining_rooms')
+        next_order = cursor.fetchone()[0]
+        
+        cursor.execute('INSERT INTO dining_rooms (room_label, room_order) VALUES (?, ?)', 
+                      (room_label.strip(), next_order))
+        room_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'room_id': room_id, 'rooms': get_all_rooms()})
+    except sqlite3.IntegrityError:
+        return jsonify({'error': 'Room already exists'}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+def update_room(room_id, room_label):
+    """Update a room's label"""
+    try:
+        conn, cursor = get_database_connection()
+        cursor.execute('UPDATE dining_rooms SET room_label = ? WHERE room_id = ?', 
+                      (room_label.strip(), room_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'rooms': get_all_rooms()})
+    except sqlite3.IntegrityError:
+        return jsonify({'error': 'Room name already exists'}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+def delete_room(room_id):
+    """Delete a room (only if no tables are assigned)"""
+    try:
+        conn, cursor = get_database_connection()
+        # Check if any tables use this room
+        cursor.execute('SELECT COUNT(*) FROM dining_tables WHERE room_id = ?', (room_id,))
+        count = cursor.fetchone()[0]
+        
+        if count > 0:
+            conn.close()
+            return jsonify({'error': f'Cannot delete room: {count} table(s) assigned'}), 400
+        
+        cursor.execute('DELETE FROM dining_rooms WHERE room_id = ?', (room_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'rooms': get_all_rooms()})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+def update_room_order(room_orders):
+    """Update room display order"""
+    try:
+        conn, cursor = get_database_connection()
+        for item in room_orders:
+            cursor.execute('UPDATE dining_rooms SET room_order = ? WHERE room_id = ?',
+                          (item['order'], item['room_id']))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+def update_room_order(room_orders):
+    """Update room_order for multiple rooms"""
+    try:
+        conn, cursor = get_database_connection()
+        for room in room_orders:
+            cursor.execute(
+                'UPDATE dining_rooms SET room_order = ? WHERE room_id = ?',
+                (room['room_order'], room['room_id'])
+            )
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+# ============================================
+# UPDATED TABLE FUNCTIONS
+# ============================================
+
+def get_dining_tables_with_rooms():
+    """Get all tables with room information, grouped by room"""
+    try:
+        conn, cursor = get_database_connection()
+        cursor.execute('''
+            SELECT 
+                dt.table_id, 
+                dt.table_number, 
+                dt.table_occupied,
+                dt.room_id,
+                COALESCE(dr.room_label, '') as room_label,
+                COALESCE(dr.room_order, 999) as room_order
+            FROM dining_tables dt
+            LEFT JOIN dining_rooms dr ON dt.room_id = dr.room_id
+            ORDER BY dr.room_order, dr.room_label, CAST(dt.table_number AS INTEGER)
+        ''')
+        tables = cursor.fetchall()
+        conn.close()
+        
+        return [{
+            'table_id': t[0], 
+            'table_number': t[1], 
+            'table_occupied': t[2],
+            'room_id': t[3],
+            'room_label': t[4],
+            'room_order': t[5]
+        } for t in tables]
+    except Exception as e:
+        print(f"Error getting tables with rooms: {e}")
+        return []
+
+
+def add_table_with_room(table_number, room_id):
+    """Add a new table with room assignment"""
+    try:
+        conn, cursor = get_database_connection()
+        
+        # Check for duplicate table number within the same room
+        cursor.execute('''
+            SELECT * FROM dining_tables 
+            WHERE table_number = ? AND (room_id = ? OR (room_id IS NULL AND ? IS NULL))
+        ''', (table_number, room_id, room_id))
+        
+        if cursor.fetchone():
+            conn.close()
+            return jsonify({'error': 'Table number already exists in this room'}), 400
+        
+        cursor.execute('INSERT INTO dining_tables (table_number, room_id) VALUES (?, ?)', 
+                      (table_number, room_id))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'tables': get_dining_tables_with_rooms()})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+def update_table_room(table_id, room_id):
+    """Update a table's room assignment"""
+    try:
+        conn, cursor = get_database_connection()
+        cursor.execute('UPDATE dining_tables SET room_id = ? WHERE table_id = ?', 
+                      (room_id, table_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'tables': get_dining_tables_with_rooms()})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+def get_free_tables_grouped():
+    """Get free tables grouped by room for POS selection"""
+    try:
+        conn, cursor = get_database_connection()
+        cursor.execute('''
+            SELECT 
+                dt.table_id, 
+                dt.table_number, 
+                dt.table_occupied,
+                dt.room_id,
+                COALESCE(dr.room_label, '') as room_label,
+                COALESCE(dr.room_order, 999) as room_order
+            FROM dining_tables dt
+            LEFT JOIN dining_rooms dr ON dt.room_id = dr.room_id
+            WHERE dt.table_occupied = 0
+            ORDER BY dr.room_order, dr.room_label, CAST(dt.table_number AS INTEGER)
+        ''')
+        tables = cursor.fetchall()
+        conn.close()
+        
+        # Group by room
+        grouped = {}
+        for t in tables:
+            room = t[4] if t[4] else 'Other'
+            if room not in grouped:
+                grouped[room] = []
+            grouped[room].append({
+                'table_id': t[0],
+                'table_number': t[1],
+                'room_id': t[3],
+                'room_label': t[4],
+                'room_order': t[5]
+            })
+        
+        return grouped
+    except Exception as e:
+        print(f"Error getting free tables: {e}")
+        return {}
+
+
+# ============================================
+# MULTI-TABLE CART CREATION
+# ============================================
+
+def new_cart_multi_table(cartData):
+    """
+    Create a new cart with support for multiple tables.
+    Replaces the dine-in portion of new_cart()
+    
+    cartData['customer']['tables'] = [
+        {'table_id': 1, 'table_number': '1', 'cover': 2},
+        {'table_id': 2, 'table_number': '2', 'cover': 2},
+    ]
+    """
+    conn = None
+    try:
+        data = cartData
+        conn, cursor = get_database_connection()
+        
+        customer = cartData['customer']
+        service_charge = customer.get('deliveryCharge', 0)
+        posted_cart_id = int(cartData.get('cart_id', 0))
+        current_menu = cartData.get('current_menu', '')
+        
+        conn.execute("BEGIN TRANSACTION")
+        
+        if data['order_type'] == "dine":
+            service_charge = json_utils.service_charge()
+            customer_id = get_guest_customer()
+        else:
+            # Handle other order types as before...
+            customer_name = customer.get('customerName', '')
+            customer_phone = customer.get('customerPhone', '')
+            posted_customer = customer.get('customerId', '')
+            
+            if customer_name == "" and customer_phone == "":
+                customer_id = get_guest_customer()
+            elif posted_customer:
+                customer_id = int(posted_customer)
+                if customer_id > 1 and customer_name != "" and customer_phone != "":
+                    cursor.execute("UPDATE customers SET customer_name = ?, customer_telephone = ? WHERE customer_id = ?", 
+                                 (customer_name, customer_phone, customer_id))
+            else:
+                cursor.execute("INSERT INTO customers (customer_name, customer_telephone) VALUES (?, ?)", 
+                             (customer_name, customer_phone))
+                customer_id = cursor.lastrowid
+        
+        address_id = None
+        if 'customerAddress' in customer and customer['customerAddress'] != '':
+            address = customer['customerAddress']
+            postcode = customer['customerPostcode']
+            distance = customer.get('addressDistance', 0)
+            
+            if customer.get('addressId') == "":
+                cursor.execute('''
+                    INSERT INTO customer_addresses (customer_id, address, postcode, distance)
+                    VALUES (?, ?, ?, ?)
+                ''', (customer_id, address, postcode, distance))
+                address_id = cursor.lastrowid
+            else:
+                address_id = customer['addressId']
+                cursor.execute('''
+                    UPDATE customer_addresses SET address = ?, postcode = ? WHERE address_id = ?
+                ''', (address, postcode, address_id))
+        
+        employee_id = session.get('employee_id', 0)
+        cursor.execute('''
+            INSERT INTO cart (order_type, order_menu, order_date, overall_note, customer_id, 
+                            cart_service_charge, cart_started_by, address_id)
+            VALUES (?, ?, datetime('now', 'localtime'), ?, ?, ?, ?, ?)
+        ''', (data['order_type'], data['order_menu'], data.get('overall_note', ''), 
+              customer_id, service_charge, employee_id, 
+              address_id if data['order_type'] == "delivery" else None))
+        
+        cart_id = cursor.lastrowid
+        
+        # Handle multiple tables for dine-in
+        if data['order_type'] == "dine":
+            tables = customer.get('tables', [])
+            
+            # If old single-table format, convert it
+            if not tables and customer.get('table'):
+                tables = [{
+                    'table_number': customer.get('table'),
+                    'cover': customer.get('cover', 0)
+                }]
+            
+            total_covers = 0
+            for table_data in tables:
+                table_number = table_data.get('table_number')
+                table_id = table_data.get('table_id')
+                cover = int(table_data.get('cover', 0))
+                total_covers += cover
+                
+                # Mark table as occupied
+                cursor.execute(
+                    "UPDATE dining_tables SET table_occupied = ? WHERE table_number = ?",
+                    (cart_id, table_number)
+                )
+                
+                # Insert into junction table
+                cursor.execute('''
+                    INSERT INTO cart_dining_tables (cart_id, table_id, table_number, table_cover)
+                    VALUES (?, ?, ?, ?)
+                ''', (cart_id, table_id, table_number, cover))
+        
+        # Handle cart transfer if switching order type
+        if posted_cart_id and current_menu != data['order_menu']:
+            # ... price recalculation logic (same as original)
+            pass
+        
+        # Transfer items from previous cart
+        cursor.execute('UPDATE cart_item SET cart_id = ? WHERE cart_id = ?', (cart_id, posted_cart_id))
+        
+        # Transfer notes
+        cursor.execute('SELECT overall_note FROM cart WHERE cart_id = ?', (posted_cart_id,))
+        source_note = cursor.fetchone()
+        if source_note and source_note[0]:
+            cursor.execute('UPDATE cart SET overall_note = ? WHERE cart_id = ?', (source_note[0], cart_id))
+        
+        # Clear old cart's tables
+        cursor.execute("UPDATE dining_tables SET table_occupied = 0 WHERE table_occupied = ?", (posted_cart_id,))
+        cursor.execute('DELETE FROM cart WHERE cart_id = ?', (posted_cart_id,))
+        cursor.execute('DELETE FROM cart_dining_tables WHERE cart_id = ?', (posted_cart_id,))
+        
+        conn.commit()
+        return jsonify({'cart_id': cart_id})
+        
+    except sqlite3.Error as e:
+        if conn:
+            conn.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# ============================================
+# TABLE MERGE FUNCTION
+# ============================================
+
+def merge_tables_to_cart(cart_id, tables_to_add):
+    """
+    Add additional tables to an existing cart (merge)
+    
+    tables_to_add = [
+        {'table_id': 3, 'table_number': '3', 'cover': 2},
+        {'table_id': 4, 'table_number': '4', 'cover': 2},
+    ]
+    """
+    conn = None
+    try:
+        conn, cursor = get_database_connection()
+        conn.execute("BEGIN TRANSACTION")
+        
+        # Verify cart exists and is dine-in
+        cursor.execute('SELECT order_type FROM cart WHERE cart_id = ? AND cart_status = ?', 
+                      (cart_id, 'processing'))
+        cart = cursor.fetchone()
+        
+        if not cart:
+            return jsonify({'error': 'Cart not found or already completed'}), 404
+        
+        if cart[0] != 'dine':
+            return jsonify({'error': 'Can only merge tables for dine-in orders'}), 400
+        
+        for table_data in tables_to_add:
+            table_number = table_data.get('table_number')
+            table_id = table_data.get('table_id')
+            cover = int(table_data.get('cover', 0))
+            
+            # Check table is free
+            cursor.execute('SELECT table_occupied FROM dining_tables WHERE table_id = ?', (table_id,))
+            table = cursor.fetchone()
+            
+            if not table:
+                conn.rollback()
+                return jsonify({'error': f'Table {table_number} not found'}), 404
+            
+            if table[0] != 0:
+                conn.rollback()
+                return jsonify({'error': f'Table {table_number} is already occupied'}), 400
+            
+            # Mark table as occupied
+            cursor.execute('UPDATE dining_tables SET table_occupied = ? WHERE table_id = ?',
+                          (cart_id, table_id))
+            
+            # Add to junction table
+            cursor.execute('''
+                INSERT INTO cart_dining_tables (cart_id, table_id, table_number, table_cover)
+                VALUES (?, ?, ?, ?)
+            ''', (cart_id, table_id, table_number, cover))
+        
+        conn.commit()
+        
+        # Return updated table list for this cart
+        tables = get_cart_tables(cart_id)
+        return jsonify({'success': True, 'tables': tables})
+        
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# ============================================
+# TABLE SPLIT FUNCTION
+# ============================================
+
+def split_tables_from_cart(source_cart_id, tables_to_split, items_to_move=None, new_covers=None):
+    """
+    Split table(s) from a cart into a new order, optionally moving items.
+    
+    tables_to_split = [
+        {'table_id': 3, 'table_number': '3', 'cover': 1},
+    ]
+    items_to_move = [
+        {'cart_item_id': 123, 'quantity': 1},  # Move 1 of this item
+        {'cart_item_id': 124, 'quantity': 2},  # Move 2 of this item
+    ]
+    new_covers = {'3': 2}  # table_number -> cover for the split tables
+    """
+    conn = None
+    try:
+        conn, cursor = get_database_connection()
+        conn.execute("BEGIN TRANSACTION")
+        
+        # Get source cart info
+        cursor.execute('''
+            SELECT order_type, order_menu, cart_service_charge, customer_id 
+            FROM cart WHERE cart_id = ? AND cart_status = ?
+        ''', (source_cart_id, 'processing'))
+        source_cart = cursor.fetchone()
+        
+        if not source_cart:
+            return jsonify({'error': 'Source cart not found'}), 404
+        
+        if source_cart[0] != 'dine':
+            return jsonify({'error': 'Can only split dine-in orders'}), 400
+        
+        # Verify we're not splitting ALL tables
+        cursor.execute('SELECT COUNT(*) FROM cart_dining_tables WHERE cart_id = ?', (source_cart_id,))
+        total_tables = cursor.fetchone()[0]
+        
+        if len(tables_to_split) >= total_tables:
+            return jsonify({'error': 'Cannot split all tables. Use transfer instead.'}), 400
+        
+        # Create new cart for split tables
+        employee_id = session.get('employee_id', 0)
+        cursor.execute('''
+            INSERT INTO cart (order_type, order_menu, order_date, customer_id, 
+                            cart_service_charge, cart_started_by)
+            VALUES (?, ?, datetime('now', 'localtime'), ?, ?, ?)
+        ''', (source_cart[0], source_cart[1], source_cart[3], source_cart[2], employee_id))
+        
+        new_cart_id = cursor.lastrowid
+        
+        # Move tables to new cart
+        for table_data in tables_to_split:
+            table_id = table_data.get('table_id')
+            table_number = table_data.get('table_number')
+            
+            # Get cover - use new_covers if provided, otherwise use existing
+            if new_covers and str(table_number) in new_covers:
+                cover = int(new_covers[str(table_number)])
+            else:
+                cursor.execute('''
+                    SELECT table_cover FROM cart_dining_tables 
+                    WHERE cart_id = ? AND table_id = ?
+                ''', (source_cart_id, table_id))
+                existing = cursor.fetchone()
+                cover = existing[0] if existing else table_data.get('cover', 0)
+            
+            # Update dining_tables to point to new cart
+            cursor.execute('UPDATE dining_tables SET table_occupied = ? WHERE table_id = ?',
+                          (new_cart_id, table_id))
+            
+            # Remove from source cart's junction
+            cursor.execute('DELETE FROM cart_dining_tables WHERE cart_id = ? AND table_id = ?',
+                          (source_cart_id, table_id))
+            
+            # Add to new cart's junction
+            cursor.execute('''
+                INSERT INTO cart_dining_tables (cart_id, table_id, table_number, table_cover)
+                VALUES (?, ?, ?, ?)
+            ''', (new_cart_id, table_id, table_number, cover))
+        
+        # Move items if specified
+        if items_to_move:
+            for item_data in items_to_move:
+                cart_item_id = item_data.get('cart_item_id')
+                qty_to_move = int(item_data.get('quantity', 1))
+                
+                # Get current item
+                cursor.execute('''
+                    SELECT product_id, product_name, price, quantity, options, 
+                           product_note, product_discount_type, product_discount,
+                           category_order, vatable
+                    FROM cart_item WHERE cart_item_id = ?
+                ''', (cart_item_id,))
+                item = cursor.fetchone()
+                
+                if not item:
+                    continue
+                
+                current_qty = item[3]
+                
+                if qty_to_move >= current_qty:
+                    # Move entire item
+                    cursor.execute('UPDATE cart_item SET cart_id = ? WHERE cart_item_id = ?',
+                                  (new_cart_id, cart_item_id))
+                else:
+                    # Split the item
+                    # Reduce quantity in source
+                    cursor.execute('UPDATE cart_item SET quantity = ? WHERE cart_item_id = ?',
+                                  (current_qty - qty_to_move, cart_item_id))
+                    
+                    # Create new item in destination
+                    cursor.execute('''
+                        INSERT INTO cart_item (cart_id, product_id, product_name, price, quantity,
+                                              options, product_note, product_discount_type,
+                                              product_discount, category_order, vatable)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (new_cart_id, item[0], item[1], item[2], qty_to_move,
+                          item[4], item[5], item[6], item[7], item[8], item[9]))
+        
+        conn.commit()
+        
+        return jsonify({
+            'success': True,
+            'new_cart_id': new_cart_id,
+            'source_tables': get_cart_tables(source_cart_id),
+            'new_tables': get_cart_tables(new_cart_id)
+        })
+        
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# ============================================
+# HELPER FUNCTIONS
+# ============================================
+
+def get_cart_tables(cart_id):
+    """Get all tables associated with a cart"""
+    try:
+        conn, cursor = get_database_connection()
+        cursor.execute('''
+            SELECT cdt.table_id, cdt.table_number, cdt.table_cover,
+                   COALESCE(dr.room_label, '') as room_label
+            FROM cart_dining_tables cdt
+            LEFT JOIN dining_tables dt ON cdt.table_id = dt.table_id
+            LEFT JOIN dining_rooms dr ON dt.room_id = dr.room_id
+            WHERE cdt.cart_id = ?
+            ORDER BY dr.room_order, CAST(cdt.table_number AS INTEGER)
+        ''', (cart_id,))
+        tables = cursor.fetchall()
+        conn.close()
+        
+        return [{
+            'table_id': t[0],
+            'table_number': t[1],
+            'cover': t[2],
+            'room_label': t[3]
+        } for t in tables]
+    except Exception as e:
+        print(f"Error getting cart tables: {e}")
+        return []
+
+
+def format_table_display(tables):
+    """
+    Format tables for display. Groups by room and creates ranges.
+    
+    Input: [{'room_label': 'Main', 'table_number': '1'}, ...]
+    Output: "Main 1-3, Patio 5, 7"
+    """
+    if not tables:
+        return ""
+    
+    # Group by room
+    by_room = {}
+    for t in tables:
+        room = t.get('room_label', '') or 'Other'
+        if room not in by_room:
+            by_room[room] = []
+        by_room[room].append(t.get('table_number'))
+    
+    parts = []
+    for room, numbers in by_room.items():
+        # Try to convert to integers for sorting/ranging
+        try:
+            nums = sorted([int(n) for n in numbers])
+            formatted = format_number_ranges(nums)
+        except (ValueError, TypeError):
+            # Non-numeric table numbers
+            formatted = ', '.join(sorted(numbers))
+        
+        if room and room != 'Other':
+            parts.append(f"{room} {formatted}")
+        else:
+            parts.append(formatted)
+    
+    return ', '.join(parts)
+
+def format_number_ranges(numbers):
+    """
+    Convert list of numbers to range string.
+    [1, 2, 3, 5, 7, 8] -> "1-3, 5, 7-8"
+    """
+    if not numbers:
+        return ""
+    
+    numbers = sorted(set(numbers))
+    ranges = []
+    start = numbers[0]
+    end = numbers[0]
+    
+    for num in numbers[1:]:
+        if num == end + 1:
+            end = num
+        else:
+            if start == end:
+                ranges.append(str(start))
+            else:
+                ranges.append(f"{start}-{end}")
+            start = end = num
+    
+    # Don't forget the last range
+    if start == end:
+        ranges.append(str(start))
+    else:
+        ranges.append(f"{start}-{end}")
+    
+    return ', '.join(ranges)
+
+def get_cart_items_for_split(cart_id):
+    """
+    Get cart items formatted for split selection UI.
+    Items with quantity > 1 are expanded into individual selectable units.
+    """
+    try:
+        conn, cursor = get_database_connection()
+        cursor.execute('''
+            SELECT cart_item_id, product_name, price, quantity, options, product_note
+            FROM cart_item
+            WHERE cart_id = ?
+            ORDER BY category_order, product_name
+        ''', (cart_id,))
+        items = cursor.fetchall()
+        conn.close()
+        
+        result = []
+        for item in items:
+            cart_item_id, name, price, qty, options, note = item
+            
+            # Parse options for display
+            option_names = []
+            if options:
+                for opt in options.split(', '):
+                    parts = opt.split('|')
+                    if len(parts) >= 2:
+                        option_names.append(parts[1])
+            
+            # Expand into individual units
+            for i in range(qty):
+                result.append({
+                    'cart_item_id': cart_item_id,
+                    'product_name': name,
+                    'price': price,
+                    'options': option_names,
+                    'note': note,
+                    'unit_index': i + 1,
+                    'total_units': qty
+                })
+        
+        return result
+    except Exception as e:
+        print(f"Error getting cart items for split: {e}")
+        return []
+
+def update_cart_tables(cart_id, table_updates):
+    """
+    Update covers and/or swap table for an existing cart.
+    For single-table orders: can update covers and swap to free table
+    For merged orders: can only update covers (no swap)
+    
+    table_updates = [
+        {'table_id': 1, 'new_table_id': 5, 'cover': 2},  # Swap table 1 → 5, set covers
+        {'table_id': 2, 'cover': 3},  # Just update covers, no swap
+    ]
+    """
+    conn = None
+    try:
+        conn, cursor = get_database_connection()
+        conn.execute("BEGIN TRANSACTION")
+        
+        # Verify cart exists and is dine-in
+        cursor.execute('SELECT order_type FROM cart WHERE cart_id = ? AND cart_status = ?', 
+                      (cart_id, 'processing'))
+        cart = cursor.fetchone()
+        
+        if not cart:
+            return jsonify({'error': 'Cart not found or already completed'}), 404
+        
+        if cart[0] != 'dine':
+            return jsonify({'error': 'Can only edit tables for dine-in orders'}), 400
+        
+        for update in table_updates:
+            table_id = update.get('table_id')
+            new_table_id = update.get('new_table_id')
+            cover = update.get('cover')
+            
+            # Update covers if provided
+            if cover is not None:
+                cursor.execute('''
+                    UPDATE cart_dining_tables 
+                    SET table_cover = ? 
+                    WHERE cart_id = ? AND table_id = ?
+                ''', (int(cover), cart_id, table_id))
+            
+            # Swap table if new_table_id provided and different
+            if new_table_id and new_table_id != table_id:
+                # Check new table is free
+                cursor.execute('SELECT table_occupied, table_number FROM dining_tables WHERE table_id = ?', 
+                              (new_table_id,))
+                new_table = cursor.fetchone()
+                
+                if not new_table:
+                    conn.rollback()
+                    return jsonify({'error': f'Table not found'}), 404
+                
+                if new_table[0] != 0:
+                    conn.rollback()
+                    return jsonify({'error': f'Table {new_table[1]} is occupied'}), 400
+                
+                new_table_number = new_table[1]
+                
+                # Clear old table
+                cursor.execute('UPDATE dining_tables SET table_occupied = 0 WHERE table_id = ?', 
+                              (table_id,))
+                
+                # Occupy new table
+                cursor.execute('UPDATE dining_tables SET table_occupied = ? WHERE table_id = ?', 
+                              (cart_id, new_table_id))
+                
+                # Update junction table
+                cursor.execute('''
+                    UPDATE cart_dining_tables 
+                    SET table_id = ?, table_number = ?
+                    WHERE cart_id = ? AND table_id = ?
+                ''', (new_table_id, new_table_number, cart_id, table_id))
+        
+        conn.commit()
+        
+        # Return updated table list
+        tables = get_cart_tables(cart_id)
+        return jsonify({'success': True, 'tables': tables})
+        
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+# ============================================
+# UPDATED get_current_cart_data
+# ============================================
+
+def get_current_cart_data_v2(cart_id):
+    """Updated to return multiple tables"""
+    try:
+        conn, cursor = get_database_connection()
+        cursor.execute('''
+            SELECT
+                c.cart_id, c.order_type, c.order_menu, c.order_date,
+                COUNT(ci.cart_id) AS cart_item_count,
+                c.customer_id, cu.customer_name, cu.customer_telephone,
+                ca.address_id, ca.address, ca.postcode,
+                c.cart_charge_updated, e.name
+            FROM cart c
+            LEFT JOIN cart_item ci ON c.cart_id = ci.cart_id
+            LEFT JOIN customers cu ON c.customer_id = cu.customer_id
+            LEFT JOIN customer_addresses ca ON ca.address_id = c.address_id
+            LEFT JOIN employees e ON cart_started_by = e.employee_id
+            WHERE c.cart_id = ?
+            GROUP BY c.cart_id
+        ''', (cart_id,))
+        
+        cart_data = cursor.fetchone()
+        
+        if not cart_data:
+            conn.close()
+            return jsonify({'error': 'Cart not found'}), 404
+        
+        # Get tables for this cart
+        tables = get_cart_tables(cart_id)
+        table_display = format_table_display(tables)
+        total_covers = sum(t.get('cover', 0) for t in tables)
+        
+        cart_dict = {
+            'cart_id': cart_data[0],
+            'order_type': cart_data[1],
+            'cart_menu': cart_data[2],
+            'order_date': cart_data[3],
+            'cart_item_count': cart_data[4],
+            'customer_id': cart_data[5],
+            'customer_name': cart_data[6],
+            'customer_telephone': cart_data[7],
+            'address_id': cart_data[8],
+            'address': cart_data[9],
+            'postcode': cart_data[10],
+            'charge_updated': cart_data[11],
+            'employee_name': cart_data[12],
+            # New fields for multi-table
+            'tables': tables,
+            'table_display': table_display,
+            'total_covers': total_covers,
+            # Legacy single-table fields for backwards compat
+            'table_number': table_display,
+            'table_cover': total_covers
+        }
+        
+        conn.close()
+        return jsonify(cart_dict)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================
+# UPDATED delete_cart_and_items
+# ============================================
+
+def delete_cart_and_items_v2(cart_id):
+    """Updated to clear all associated tables"""
+    try:
+        conn, cursor = get_database_connection()
+        
+        # Clear all tables for this cart
+        cursor.execute("UPDATE dining_tables SET table_occupied = 0 WHERE table_occupied = ?", (cart_id,))
+        
+        # Delete cart data
+        cursor.execute("DELETE FROM cart WHERE cart_id = ?", (cart_id,))
+        cursor.execute("DELETE FROM cart_item WHERE cart_id = ?", (cart_id,))
+        cursor.execute("DELETE FROM cart_dining_tables WHERE cart_id = ?", (cart_id,))
+        cursor.execute("DELETE FROM cart_payments WHERE cart_id = ?", (cart_id,))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({"message": f"Cart {cart_id} and associated data deleted."})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+def complete_checkout_v2(cart_id, payment_method, discounted_total, split_charges=None):
+    try:
+        employee_id = session.get('employee_id', 0)
+        current_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        conn, cursor = get_database_connection()
+        
+        # 1. First update cart status and clear dining table
+        cursor.execute("""
+            UPDATE cart 
+            SET cart_status = 'completed', 
+                cart_charge_updated = ?, 
+                cart_updated_by = ?,
+                sync_status = 'pending'
+            WHERE cart_id = ?""", 
+            (current_timestamp, employee_id, cart_id))
+        
+        cursor.execute("""
+            UPDATE dining_tables 
+            SET table_occupied = 0 
+            WHERE table_occupied = ?""", 
+            (cart_id,))
+        
+        # VAT Calculation with multi-option support
+        vat_rate = json_utils.get_vat_rate()
+        if vat_rate > 0:
+            cursor.execute("""
+                SELECT 
+                    ci.price, ci.quantity, ci.product_discount_type, 
+                    ci.product_discount, ci.vatable, ci.options,
+                    c.order_type, c.cart_discount_type, c.cart_discount
+                FROM cart_item ci
+                JOIN cart c ON ci.cart_id = c.cart_id
+                WHERE ci.cart_id = ?""", (cart_id,))
+            items = cursor.fetchall()
+            
+            if items:
+                cart_total = 0
+                vatable_total = 0
+                order_type = items[0][6]
+                
+                for item in items:
+                    base_price, base_qty, disc_type, disc_amount, base_vatable, options_str, _, _, _ = item
+                    options = helpers.parse_options(options_str)
+                    
+                    # 1. Calculate base item
+                    base_total = base_price * base_qty
+                    base_vat_amount = base_total if (order_type == 'dine' or base_vatable) else 0
+                    
+                    # 2. Calculate all options
+                    options_total = 0
+                    options_vat_amount = 0
+                    for opt in options:
+                        opt_total = opt['price'] * opt['quantity']
+                        options_total += opt_total
+                        if order_type == 'dine' or opt['vatable']:
+                            options_vat_amount += opt_total
+                    
+                    # 3. Combined total before discounts
+                    combined_total = base_total + options_total
+                    combined_vatable = base_vat_amount + options_vat_amount
+                    
+                    # 4. Apply item-level discount proportionally
+                    if disc_amount > 0:
+                        combined_total = helpers.calculate_cart_discounts(disc_amount, disc_type, combined_total)
+                        if combined_total > 0:
+                            discount_ratio = combined_total / (combined_total + disc_amount)
+                            combined_vatable *= discount_ratio
+                    
+                    # Add to totals
+                    cart_total += combined_total
+                    vatable_total += combined_vatable
+                
+                # Apply cart discount proportionally
+                cart_disc = items[0][8]
+                if cart_disc > 0:
+                    cart_disc_type = items[0][7]
+                    cart_total = helpers.calculate_cart_discounts(cart_disc, cart_disc_type, cart_total)
+                    if cart_total > 0:
+                        vatable_total *= (cart_total / (cart_total + cart_disc))
+                
+                # Update VAT
+                vat_base = cart_total if order_type == 'dine' else vatable_total
+                vat_amount = round(vat_base * vat_rate, 2)
+                cursor.execute("UPDATE cart SET vat_amount = ? WHERE cart_id = ?", (vat_amount, cart_id))
+        
+        # 3. Process payments
+        if payment_method == 'Split' and split_charges and len(split_charges) > 0:
+            for charge in split_charges:
+                charge_payment_method = charge.get('paymentMethod', payment_method)
+                charge_discounted_total = charge.get('amount', 0)
+                cursor.execute("""
+                    INSERT INTO cart_payments 
+                    (cart_id, payment_method, discounted_total) 
+                    VALUES (?, ?, ?)""",
+                    (cart_id, charge_payment_method, charge_discounted_total))
+        else:
+            cursor.execute("""
+                INSERT INTO cart_payments 
+                (cart_id, payment_method, discounted_total) 
+                VALUES (?, ?, ?)""",
+                (cart_id, payment_method, discounted_total))
+        
+        # 4. Create kitchen order if enabled
+        if get_setting('kitchen_screen') == "1":
+            cursor.execute("""
+                INSERT INTO kitchen_orders (order_id, item_id)
+                SELECT cart_id, cart_item_id
+                FROM cart_item
+                WHERE cart_id = ?""", 
+                (cart_id,))
+
+        conn.commit()
+        deduct_inventory(cart_id)
+        return {'status': 'success'}
+        
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return {'status': 'error', 'message': str(e)}
+    finally:
+        if conn:
+            conn.close()
+
 async def get_all_cart_items(cart_id):
     try:
         conn, cursor = get_database_connection()
@@ -1216,7 +2331,8 @@ async def get_all_cart_items(cart_id):
                 cart_item.vatable,
                 COALESCE(cart_item.kitchen_printed_qty, 0) AS kitchen_printed_qty,
                 COALESCE(cart_item.bar_printed_qty, 0) AS bar_printed_qty,
-                COALESCE(products.cpn, 0) AS cpn
+                COALESCE(products.cpn, 0) AS cpn,
+                products.category_id
             FROM cart_item
             LEFT JOIN products ON cart_item.product_id = products.product_id
             WHERE cart_item.cart_id = ?
@@ -1243,7 +2359,8 @@ async def get_all_cart_items(cart_id):
                 'vat': item[11],
                 'kitchen_printed_qty': item[12],
                 'bar_printed_qty': item[13],
-                'cpn': item[14]
+                'cpn': item[14],
+                'category_id': item[15]
             }
             items_list.append(item_dict)
         cursor.execute(
@@ -1515,6 +2632,43 @@ def get_all_tables():
         return dining_tables
     except Exception as e:
         return f"Error all getting tables: {e}"
+
+def get_all_tables_grouped():
+    """Get ALL tables (free and occupied) grouped by room"""
+    try:
+        conn, cursor = get_database_connection()
+        cursor.execute('''
+            SELECT 
+                dt.table_id, 
+                dt.table_number, 
+                dt.table_occupied,
+                dt.room_id,
+                COALESCE(dr.room_label, '') as room_label
+            FROM dining_tables dt
+            LEFT JOIN dining_rooms dr ON dt.room_id = dr.room_id
+            ORDER BY dr.room_order, dr.room_label, CAST(dt.table_number AS INTEGER)
+        ''')
+        tables = cursor.fetchall()
+        conn.close()
+        
+        # Group by room
+        grouped = {}
+        for t in tables:
+            room = t[4] if t[4] else ''
+            if room not in grouped:
+                grouped[room] = []
+            grouped[room].append({
+                'table_id': t[0],
+                'table_number': t[1],
+                'table_occupied': t[2],
+                'room_id': t[3],
+                'room_label': t[4]
+            })
+        
+        return grouped
+    except Exception as e:
+        print(f"Error getting all tables grouped: {e}")
+        return {}
 
 def add_table(table_number):
     try:
@@ -4837,3 +5991,18 @@ def detach_categories_from_menu(menu_id, data):
         return jsonify(error=str(e)), 500
     finally:
         conn.close()
+
+def get_category_print_groups():
+    """
+    Get category_id -> print_group mapping for sorting items on receipts.
+    Returns dict: {category_id: print_group}
+    """
+    try:
+        conn, cursor = get_database_connection()
+        cursor.execute('SELECT category_id, COALESCE(print_group, 1) FROM category')
+        groups = {row[0]: row[1] for row in cursor.fetchall()}
+        conn.close()
+        return groups
+    except Exception as e:
+        print(f"Error getting print groups: {e}")
+        return {}
