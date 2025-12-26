@@ -1,0 +1,574 @@
+{% extends "base.html" %}
+
+{% block title %}POS Printer Settings{% endblock %}
+
+{% block content %}
+
+<div class="row mt-2">
+    <div class="col-md-12">
+        <div class="card flex-fill w-100 overflow-auto" style="height: 95vh;">
+            <div class="card-header">
+                <div class="float-end row">
+                    <!-- <div class="col-auto">
+                        <button class="btn btn-success btn-sm" onclick="testPrint()">Test Print</button>
+                    </div> -->
+                    <div class="col-auto">
+                        <button class="btn btn-warning btn-sm" onclick="winPrintersList('settings')">Settings Printers</button>
+                        <button class="btn btn-secondary btn-sm" onclick="winPrintersList('classic')">Control Panel Printers</button>
+                    </div>
+                </div>
+                <h5 class="card-title mb-0">{{ back_link|safe}} POS Printer Settings</h5>
+            </div>
+
+            <div class="card-body bg-secondary-subtle pb-1 overflow-auto" style="max-height: 85vh; min-height: 85vh;overflow-y: auto;">
+                <div class="row">
+                    <!-- Left Column - Printer Type Settings -->
+                    <div class="col-md-6">
+                        <div class="card card-body py-0">
+                            <h5 class="mb-3">Printer Type Selection</h5>
+                            <div class="mb-3 input-group">
+                                <input type="radio" class="btn-check" name="printTypeSelection" id="printTypeSelection1" value="pdf" autocomplete="off" {% if print_type == 'pdf' %} checked {% endif %} onclick="updateprintTypeSelection()">
+                                <label class="btn btn-outline-primary" for="printTypeSelection1">Alternative</label>
+                                <input type="radio" class="btn-check" name="printTypeSelection" id="printTypeSelection2" value="native" autocomplete="off" {% if print_type == 'native' %} checked {% endif %} onclick="updateprintTypeSelection()">
+                                <label class="btn btn-outline-primary" for="printTypeSelection2">ESC/POS</label>
+                            </div>
+                        </div>
+                        <!-- Tab Navigation -->
+                        <ul class="nav nav-tabs" id="printerSettingsTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="receipt-tab" data-bs-toggle="tab" data-bs-target="#receipt-settings" 
+                                        type="button" role="tab" aria-controls="receipt-settings" aria-selected="true">
+                                    Receipt Printer Settings
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="escpos-tab" data-bs-toggle="tab" data-bs-target="#escpos-settings" 
+                                        type="button" role="tab" aria-controls="escpos-settings" aria-selected="false">
+                                    ESC/POS Printer Settings
+                                </button>
+                            </li>
+                        </ul>
+                        
+                        <!-- Tab Content -->
+                        <div class="tab-content" id="printerSettingsContent">
+                            <!-- Receipt Printer Settings Tab -->
+                            <div class="tab-pane fade show active" id="receipt-settings" role="tabpanel" aria-labelledby="receipt-tab">
+                                <div class="card card-body">
+                                    <h5 class="mb-3">Receipt Printer Configuration</h5>
+                                    <div class="input-group mb-3">
+                                        <span class="input-group-text w-25">Page Width:</span>
+                                        <input type="number" id="page_width" name="page_width" min="40" max="110" step="1" 
+                                            value="{{ pos_printer_settings.receipt_printer_settings[0].page_width }}" class="form-control w-25">
+                                    
+                                        <span class="input-group-text w-25">Page Height:</span>
+                                        <input type="number" id="page_height" name="page_height" min="200" max="500" step="1" 
+                                            value="{{ pos_printer_settings.receipt_printer_settings[0].page_height }}" class="form-control w-25">
+                                    </div>
+                                    <div class="input-group mb-3">
+                                        <span class="input-group-text w-25">Font Size:</span>
+                                        <input type="number" id="font_size" name="font_size" min="12" max="30" step="1" 
+                                            value="{{ pos_printer_settings.receipt_printer_settings[0].font_size }}" class="form-control w-25">
+                                    
+                                        <span class="input-group-text w-25">Font Weight:</span>
+                                        <select id="font_weight" name="font_weight" class="form-select w-25">
+                                            <option value="100" {% if pos_printer_settings.receipt_printer_settings[0].font_weight == '100' %} selected {% endif %}>Lightest</option>
+                                            <option value="300" {% if pos_printer_settings.receipt_printer_settings[0].font_weight == '300' %} selected {% endif %}>Light</option>
+                                            <option value="normal" {% if pos_printer_settings.receipt_printer_settings[0].font_weight == 'normal' %} selected {% endif %}>Normal</option>
+                                            <option value="bold" {% if pos_printer_settings.receipt_printer_settings[0].font_weight == 'bold' %} selected {% endif %}>Bold</option>
+                                            <option value="900" {% if pos_printer_settings.receipt_printer_settings[0].font_weight == '900' %} selected {% endif %}>Darkest</option>
+                                        </select>
+                                    </div>
+                                    <button onclick="updateReceiptSettings()" class="btn btn-primary mt-2 align-self-end">Save Receipt Settings</button>
+                                </div>
+                            </div>
+                            
+                            <!-- ESC/POS Printer Settings Tab -->
+                            <div class="tab-pane fade" id="escpos-settings" role="tabpanel" aria-labelledby="escpos-tab">
+                                <div class="card card-body mb-3">
+                                    <h5 class="mb-1">Recommended settings for ESC/POS printers</h5>
+                                    
+                                        <div class="table-responsive">
+                                            <table class="table table-bordered table-sm align-middle mb-2">
+                                                <thead class="table-light">
+                                                    <tr>
+                                                        <th>Font</th>
+                                                        <th>Width</th>
+                                                        <th>Height</th>
+                                                        <th>Width Modifier</th>
+                                                        <th>Height Modifier</th>
+                                                        <th>Appearance</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr>
+                                                        <td rowspan="2">A</td>
+                                                        <td>48</td>
+                                                        <td>Normal</td>
+                                                        <td>Normal</td>
+                                                        <td>Normal</td>
+                                                        <td>Medium Light</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>48</td>
+                                                        <td>Double</td>
+                                                        <td>Normal</td>
+                                                        <td>Normal</td>
+                                                        <td>Largest</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td rowspan="4">B</td>
+                                                        <td>32</td>
+                                                        <td>Normal</td>
+                                                        <td>Double</td>
+                                                        <td>Normal</td>
+                                                        <td>Medium Dark</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>32</td>
+                                                        <td>Double</td>
+                                                        <td>Double</td>
+                                                        <td>Double</td>
+                                                        <td>Larger Dark</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>64</td>
+                                                        <td>Double</td>
+                                                        <td>Normal</td>
+                                                        <td>Normal</td>
+                                                        <td>Smaller</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>64</td>
+                                                        <td>Normal</td>
+                                                        <td>Normal</td>
+                                                        <td>Normal</td>
+                                                        <td>Smallest</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <div class="mb-2"><em>Adjust width as needed</em></div>
+                                    
+                                    <div class="input-group mb-3">
+                                        <span class="input-group-text w-25">Font Style:</span>
+                                        <select id="escpos_font_style" name="escpos_font_style" class="form-select w-25">
+                                            <option value="a" {% if pos_printer_settings.escpos_printer_settings[0].font_style == 'a' %} selected {% endif %}>Font A</option>
+                                            <option value="b" {% if pos_printer_settings.escpos_printer_settings[0].font_style == 'b' %} selected {% endif %}>Font B</option>
+                                        </select>
+                                        <span class="input-group-text w-25">Width:</span>
+                                        <input type="number" id="escpos_width" name="escpos_width" min="20" max="70" step="1" 
+                                            value="{{ pos_printer_settings.escpos_printer_settings[0].width }}" class="form-control w-25">
+                                    </div>
+                                    <div class="input-group mb-3">
+                                        <span class="input-group-text w-25">Font Height:</span>
+                                        <select id="escpos_font_size_height" name="escpos_font_size_height" class="form-select w-25">
+                                            <option value="1" {% if pos_printer_settings.escpos_printer_settings[0].font_size_height == 1 %} selected {% endif %}>Normal</option>
+                                            <option value="2" {% if pos_printer_settings.escpos_printer_settings[0].font_size_height == 2 %} selected {% endif %}>Double</option>
+                                        </select>
+                                    
+                                        <span class="input-group-text w-25">Font Width:</span>
+                                        <select id="escpos_font_size_width" name="escpos_font_size_width" class="form-select w-25">
+                                            <option value="1" {% if pos_printer_settings.escpos_printer_settings[0].font_size_width == 1 %} selected {% endif %}>Normal</option>
+                                            <option value="2" {% if pos_printer_settings.escpos_printer_settings[0].font_size_width == 2 %} selected {% endif %}>Double</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="form-check form-switch fs-4 mt-2 col-md-6">
+                                        <input class="form-check-input" type="checkbox" role="switch" id="pound_on" {% if pound_on == "1" %} checked {% endif %}>
+                                        <label class="form-check-label" for="pound_on" name="pound_on">£ sign</label>
+                                    </div>
+ 
+                                    <button onclick="updateEscposSettings()" class="btn btn-primary mt-2 align-self-end">Save ESC/POS Settings</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Right Column - Common Settings in Tabs -->
+                    <div class="col-md-6">
+                        <!-- Tab Navigation -->
+                        <ul class="nav nav-tabs" id="commonSettingsTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="header-footer-tab" data-bs-toggle="tab" data-bs-target="#header-footer" 
+                                        type="button" role="tab" aria-controls="header-footer" aria-selected="true">
+                                    Header & Footer
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="options-tab" data-bs-toggle="tab" data-bs-target="#print-options" 
+                                        type="button" role="tab" aria-controls="print-options" aria-selected="false">
+                                    Print Options
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="selection-tab" data-bs-toggle="tab" data-bs-target="#printer-selection" 
+                                        type="button" role="tab" aria-controls="printer-selection" aria-selected="false">
+                                    Printer Selection
+                                </button>
+                            </li>
+                        </ul>
+                        
+                        <!-- Tab Content -->
+                        <div class="tab-content" id="commonSettingsContent">
+                            <!-- Header & Footer Tab -->
+                            <div class="tab-pane fade show active" id="header-footer" role="tabpanel" aria-labelledby="header-footer-tab">
+                                <div class="card card-body">
+                                    <h5 class="mb-3">Header & Footer Content</h5>
+                                    <div class="mb-3">
+                                        <label for="header_text" class="form-label">Header Text</label>
+                                        <textarea class="form-control" id="header_text" name="header_text" rows="3">{{ pos_printer_settings.receipt_printer_settings[0].header_text }}</textarea>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="footer_text" class="form-label">Footer Text</label>
+                                        <textarea class="form-control" id="footer_text" name="footer_text" rows="3">{{ pos_printer_settings.receipt_printer_settings[0].footer_text }}</textarea>
+                                    </div>
+                                    <button onclick="updateHeaderFooter()" class="btn btn-primary mt-2 align-self-end">Save Header/Footer</button>
+                                </div>
+                            </div>
+                            
+                            <!-- Print Options Tab -->
+                            <div class="tab-pane fade" id="print-options" role="tabpanel" aria-labelledby="options-tab">
+                                <div class="card card-body">
+                                    <h5 class="mb-3">Print Options</h5>
+                                    <div class="row">
+                                        <div class="form-check form-switch fs-4 mt-2 col-md-6">
+                                            <input class="form-check-input" type="checkbox" role="switch" id="kitchen_print" {% if kitchen_print_is_on %} checked {% endif %}>
+                                            <label class="form-check-label" for="kitchen_print" name="kitchen_print">Kitchen Print</label>
+                                        </div>
+                                        <div class="form-check form-switch fs-4 mt-2 col-md-6">
+                                            <input class="form-check-input" type="checkbox" role="switch" id="bar_print" {% if bar_print_is_on %} checked {% endif %}>
+                                            <label class="form-check-label" for="bar_print">Bar Print</label>
+                                        </div>
+                                        <div class="form-check form-switch fs-4 mt-2 col-md-6">
+                                            <input class="form-check-input" type="checkbox" role="switch" id="online_header" {% if pos_printer_settings.receipt_printer_settings[0].online_header %} checked {% endif %}>
+                                            <label class="form-check-label" for="online_header" name="online_header">Online Header</label>
+                                        </div>
+                                        <div class="form-check form-switch fs-4 mt-2 col-md-6">
+                                            <input class="form-check-input" type="checkbox" role="switch" id="online_footer" {% if pos_printer_settings.receipt_printer_settings[0].online_footer %} checked {% endif %}>
+                                            <label class="form-check-label" for="online_footer" name="online_footer">Online Footer</label>
+                                        </div>
+                                        <div class="form-check form-switch fs-4 mt-2 col-md-6">
+                                            <input class="form-check-input" type="checkbox" role="switch" id="card_print" {% if card_print %} checked {% endif %}>
+                                            <label class="form-check-label" for="card_print" name="card_print">Card Receipt Print</label>
+                                        </div>
+                                    </div>
+                                    <button onclick="updatePrintOptions()" class="btn btn-primary mt-3 align-self-end">Save Print Options</button>
+                                </div>
+                            </div>
+                            
+                            <!-- Printer Selection Tab -->
+                            <div class="tab-pane fade" id="printer-selection" role="tabpanel">
+                                <div class="card card-body">
+                                    <h5 class="mb-3">Printer Selection</h5>
+                                    <div class="input-group mb-3">
+                                        <span class="input-group-text w-25">Kitchen</span>
+                                        <select id="kitchen_printer" class="form-select">
+                                            <option value="" {% if kitchen_printer == '' %}selected{% endif %}>Default</option>
+                                            {% for printer in printers %}
+                                            <option value="{{ printer }}" {% if kitchen_printer == printer %}selected{% endif %}>{{ printer }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="input-group mb-3">
+                                        <span class="input-group-text w-25">Bar</span>
+                                        <select id="bar_printer" class="form-select">
+                                            <option value="" {% if bar_printer == '' %}selected{% endif %}>Default</option>
+                                            {% for printer in printers %}
+                                            <option value="{{ printer }}" {% if bar_printer == printer %}selected{% endif %}>{{ printer }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <button onclick="savePrinters()" class="btn btn-primary mt-2 align-self-end">Save Printer Selection</button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="alert alert-danger mt-3" role="alert" id="msg" style="display: none;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block footer %}
+<script src="{{ url_for('static', filename='js/sweetalert.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/pos.helpers.js') }}"></script>
+<script>
+function updateSettings() {
+    var msg = document.getElementById('msg');
+    var pageWidth = document.getElementById("page_width").value;
+    var pageHeight = document.getElementById("page_height").value;
+    var fontSize = document.getElementById("font_size").value;
+    var fontWeight = document.getElementById("font_weight").value;
+    var footer = document.getElementById("footer_text").value;
+    var header = document.getElementById("header_text").value;
+    var kp_checkbox = document.getElementById("kitchen_print");
+    var kp_isChecked = kp_checkbox.checked;
+    var oh_checkbox = document.getElementById("online_header");
+    var oh_isChecked = oh_checkbox.checked;
+    var of_checkbox = document.getElementById("online_footer");
+    var of_isChecked = of_checkbox.checked;
+    var cp_checkbox = document.getElementById("card_print");
+    var cp_isChecked = cp_checkbox.checked;
+
+    // Validate null or non-integer values for page width, page height, and font size
+    if (pageWidth === "" || isNaN(pageWidth) || pageHeight === "" || isNaN(pageHeight) || fontSize === "" || isNaN(fontSize)) {
+        msg.innerHTML = "Page width, page height, and font size must be numbers";
+        msg.style.display = "block";
+        return;
+    }
+    fetch('/update_pos_printer_settings', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            page_width: parseInt(pageWidth),
+            page_height: parseInt(pageHeight),
+            font_size: parseInt(fontSize),
+            font_weight: fontWeight,
+            header_text: header,
+            footer_text: footer,
+            kitchen_print: kp_isChecked,
+            online_header: oh_isChecked,
+            online_footer: of_isChecked,
+            card_print: cp_isChecked
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        // Swal.fire({
+        //     icon: 'success',
+        //     title: data.message
+        // }).then((result) => {
+        //     if (result.isConfirmed) {
+        //         location.reload();
+        //     }
+        // });
+        showToast(data.message, true);
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast("An error occurred while updating settings.", false);
+    });
+}
+
+function updateReceiptSettings() {
+    var msg = document.getElementById('msg');
+    var pageWidth = document.getElementById("page_width").value;
+    var pageHeight = document.getElementById("page_height").value;
+    var fontSize = document.getElementById("font_size").value;
+    var fontWeight = document.getElementById("font_weight").value;
+
+    // Validate null or non-integer values for page width, page height, and font size
+    if (pageWidth === "" || isNaN(pageWidth) || pageHeight === "" || isNaN(pageHeight) || fontSize === "" || isNaN(fontSize)) {
+        msg.innerHTML = "Page width, page height, and font size must be numbers";
+        msg.style.display = "block";
+        return;
+    }
+    fetch('/update_receipt_printer_settings', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            page_width: parseInt(pageWidth),
+            page_height: parseInt(pageHeight),
+            font_size: parseInt(fontSize),
+            font_weight: fontWeight
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        // Swal.fire({
+        //     icon: 'success',
+        //     title: data.message
+        // }).then((result) => {
+        //     if (result.isConfirmed) {
+        //         location.reload();
+        //     }
+        // });
+        showToast(data.message, true);
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast("An error occurred while updating settings.", false);
+    });
+}
+
+function updateEscposSettings() {
+    var msg = document.getElementById('msg');
+    var escposFontStyle = document.getElementById("escpos_font_style").value;
+    var escposWidth = document.getElementById("escpos_width").value;
+    var escposFontSizeHeight = document.getElementById("escpos_font_size_height").value;
+    var escposFontSizeWidth = document.getElementById("escpos_font_size_width").value;
+    var pound_on = document.getElementById("pound_on").checked ? true : false;
+
+    // Validate null or non-integer values for width
+    if (escposWidth === "" || isNaN(escposWidth)) {
+        msg.innerHTML = "Width must be a number";
+        msg.style.display = "block";
+        return;
+    }
+    fetch('/update_escpos_printer_settings', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            font_style: escposFontStyle,
+            width: parseInt(escposWidth),
+            font_size_height: parseInt(escposFontSizeHeight),
+            font_size_width: parseInt(escposFontSizeWidth),
+            pound_on: pound_on
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        showToast(data.message, true);
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast("An error occurred while updating settings.", false);
+    });
+}
+
+function updateHeaderFooter() {
+    var msg = document.getElementById('msg');
+    var headerText = document.getElementById("header_text").value;
+    var footerText = document.getElementById("footer_text").value;
+
+    fetch('/update_receipt_header_footer', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            header_text: headerText,
+            footer_text: footerText
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        showToast(data.message, true);
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast("An error occurred while updating settings.", false);
+    });
+}
+
+function updatePrintOptions() {
+    var msg = document.getElementById('msg');
+    var kp_checkbox = document.getElementById("kitchen_print");
+    var kp_isChecked = kp_checkbox.checked;
+    var oh_checkbox = document.getElementById("online_header");
+    var oh_isChecked = oh_checkbox.checked;
+    var of_checkbox = document.getElementById("online_footer");
+    var of_isChecked = of_checkbox.checked;
+    var cp_checkbox = document.getElementById("card_print");
+    var cp_isChecked = cp_checkbox.checked;
+    var bar_ischeckbox = document.getElementById("bar_print");
+    var bar_isChecked = bar_ischeckbox.checked;
+
+    fetch('/update_print_options', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            kitchen_print: kp_isChecked,
+            online_header: oh_isChecked,
+            online_footer: of_isChecked,
+            card_print: cp_isChecked,
+            bar_print: bar_isChecked
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        showToast(data.message, true);
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast("An error occurred while updating settings.", false);
+    });
+}
+
+// function to update printTypeSelection
+function updateprintTypeSelection() {
+    var msg = document.getElementById('msg');
+    var printTypeSelection = document.querySelector('input[name="printTypeSelection"]:checked').value;
+
+    fetch('/update_print_type_selection', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            print_type: printTypeSelection
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        showToast(data.message, true);
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast("An error occurred while updating settings.", false);
+    });
+}
+
+function testPrint() {
+    fetch('/test_print_escpos', {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log(data)
+    })
+    .catch(error => {
+        console.error('Error:', error);
+    });
+}
+
+function winPrintersList(mode) {
+    fetch('/open_printer_settings', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ mode: mode })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast("Printer panel opened", true);
+        } else {
+            showToast(data.error || "Failed to open printers", false);
+        }
+    })
+    .catch(() => showToast("Request failed", false));
+}
+
+function savePrinters() {
+    fetch('/set_printers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            kitchen_printer: document.getElementById('kitchen_printer').value,
+            bar_printer: document.getElementById('bar_printer').value
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        showToast(data.success ? 'Printers saved successfully' : (data.error || 'Failed to save'), data.success);
+    })
+    .catch(() => showToast('Network error. Please try again.', false));
+}
+
+</script>
+
+
+{% endblock %}
