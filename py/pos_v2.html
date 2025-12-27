@@ -847,10 +847,32 @@
                         optionBadgeHTML = optionBadgeHTML.trim();
 
                         const mods = (item.product_note || '')
-                            .split('|')
+                            .split(', ')
                             .filter(Boolean)
-                            .map(m => `<span class="badge bg-warning">${m}</span> `)
-                            .join('');
+                            .map(modStr => {
+                                const parts = modStr.split('|');
+                                if (parts.length >= 4) {
+                                    // New format: modifier_id|name|price|qty
+                                    const name = parts[1];
+                                    const price = parseFloat(parts[2]) || 0;
+                                    const qty = parseInt(parts[3]) || 1;
+                                    
+                                    let label = qty > 1 ? `${qty}x ${name}` : name;
+                                    if (price > 0) {
+                                        label += ` +£${price.toFixed(2)}`;
+                                    } else if (price < 0) {
+                                        label += ` -£${Math.abs(price).toFixed(2)}`;
+                                    }
+                                    
+                                    return `<span class="badge ${price < 0 ? 'bg-danger' : 'bg-warning'}">${label}</span>`;
+                                } else if (parts.length === 1) {
+                                    // Legacy format: just name
+                                    return `<span class="badge bg-warning">${parts[0]}</span>`;
+                                }
+                                return '';
+                            })
+                            .filter(Boolean)
+                            .join(' ');
 
                         // Line total already includes per-item discount via your helper
                         const discountedPrice = parseFloat(calculateDiscountedPriceForCartItems(item, totalPrice)) || 0;
@@ -1008,16 +1030,33 @@
             });
     }
 
-    function calculateDiscountedPriceForCartItems(item, totalPrice) {
+    function calculateDiscountedPriceForCartItems(item, optionsTotal) {
+        let basePrice = item.price;
+        let modsTotal = 0;
+        
+        // Calculate modifier prices from product_note
+        if (item.product_note) {
+            item.product_note.split(', ').forEach(modStr => {
+                const parts = modStr.split('|');
+                if (parts.length >= 4) {
+                    const price = parseFloat(parts[2]) || 0;
+                    const qty = parseInt(parts[3]) || 1;
+                    modsTotal += price * qty;
+                }
+            });
+        }
+        
+        const totalPrice = optionsTotal + modsTotal;
+        
         if (item.product_discount > 0) {
             if (item.product_discount_type === 'percentage') {
-            const discountAmount = (item.product_discount / 100) * ((item.price + totalPrice) * item.quantity);
-            return ((item.price + totalPrice) * item.quantity - discountAmount).toFixed(2);
+                const discountAmount = (item.product_discount / 100) * ((basePrice + totalPrice) * item.quantity);
+                return ((basePrice + totalPrice) * item.quantity - discountAmount).toFixed(2);
             } else if (item.product_discount_type === 'fixed') {
-            return ((item.price + totalPrice - item.product_discount) * item.quantity).toFixed(2);
+                return ((basePrice + totalPrice - item.product_discount) * item.quantity).toFixed(2);
             }
         }
-        return ((item.price + totalPrice) * item.quantity).toFixed(2);
+        return ((basePrice + totalPrice) * item.quantity).toFixed(2);
     }
 
     function customerOrders(customerId, cartId, cartMenu) {
@@ -1346,107 +1385,371 @@
     function showCartModifiers(cartProductId, productName, quantity, productPrice, options) {
         const badge = decodeURIComponent(options);
         const cartId = getCurrentCartId();
-        fetch('/get_mods')
+        
+        // Fetch existing mods AND available presets for this item
+        fetch(`/get_cart_item_mods/${cartProductId}`)
             .then(response => response.json())
             .then(data => {
-                const modifiersHTML = data.length > 0 
-                    ? data.map(modifier => `
-                        <div class="col-auto mb-1 pe-0">
-                            <input type="checkbox" class="btn-check mods-checkbox" id="btn-check-${modifier[0]}" autocomplete="off" value="${modifier[1]}">
-                            <label class="btn btn-outline-success btn-sm rounded-0 text-dark" for="btn-check-${modifier[0]}">
-                                ${modifier[1]}
-                            </label>
-                        </div>`).join('')
-                    : `<div class="col-auto">No modifier presets added</div>`;
-
+                const existingMods = data.existing_mods || [];
+                const presets = data.presets || [];
+                
+                // Build presets HTML with prices
+                const presetsHTML = presets.length > 0 
+                    ? presets.map(preset => {
+                        const modId = preset[0];
+                        const modName = preset[1];
+                        const modPrice = parseFloat(preset[2]) || 0;
+                        const borderClass = modPrice > 0 ? 'border-success' : (modPrice < 0 ? 'border-danger' : 'border-secondary');
+                        // Check if this preset is already applied
+                        const existing = existingMods.find(m => m.modifier_id === modId);
+                        const isChecked = existing ? 'checked' : '';
+                        const currentQty = existing ? existing.qty : 0;
+                        
+                        // Price display
+                        let priceLabel = '';
+                        if (modPrice > 0) {
+                            priceLabel = `<small class="text-success">+£${modPrice.toFixed(2)}</small>`;
+                        } else if (modPrice < 0) {
+                            priceLabel = `<small class="text-danger">-£${Math.abs(modPrice).toFixed(2)}</small>`;
+                        }
+                        
+                        return `
+                            <div class="col-md-6 col-lg-4 mb-2">
+                                <div class="card h-100 border-1 ${borderClass} mod-card ${isChecked ? 'border-success' : ''}" data-mod-id="${modId}">
+                                    <div class="card-body p-2">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div class="form-check mb-0">
+                                                <input type="checkbox" class="form-check-input mod-preset-check" 
+                                                    id="mod-${modId}" 
+                                                    data-mod-id="${modId}"
+                                                    data-mod-name="${modName}"
+                                                    data-mod-default-price="${modPrice}"
+                                                    ${isChecked}>
+                                                <label class="form-check-label" for="mod-${modId}">
+                                                    ${modName}
+                                                </label>
+                                            </div>
+                                            <div class="qty-controls ${isChecked ? '' : 'd-none'}">
+                                                <div class="btn-group btn-group-sm">
+                                                    <button class="btn btn-outline-secondary" type="button" onclick="adjustModQty(${modId}, -1)">-</button>
+                                                    <span class="btn btn-outline-secondary disabled mod-qty" id="mod-qty-${modId}">${currentQty || 1}</span>
+                                                    <button class="btn btn-outline-secondary" type="button" onclick="adjustModQty(${modId}, 1)">+</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="price-controls mt-2 ${isChecked ? '' : 'd-none'}">
+                                            <div class="input-group input-group-sm">
+                                                <span class="input-group-text">£</span>
+                                                <input type="text" 
+                                                    class="form-control form-control-sm text-end mod-price" 
+                                                    id="mod-price-${modId}" 
+                                                    value="${existing ? existing.price.toFixed(2) : modPrice.toFixed(2)}" 
+                                                    pattern="-?[0-9]*\.?[0-9]{0,2}"
+                                                    inputmode="decimal"
+                                                    onchange="updateModifierTotal()"
+                                                    onclick="this.select()">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')
+                    : `<div class="col-12"><p class="text-muted">No modifier presets available</p></div>`;
+                
+                // Build custom mods HTML (mods with modifier_id = 0)
+                const customMods = existingMods.filter(m => m.modifier_id === 0);
+                const customModsHTML = customMods.map((mod, idx) => `
+                    <span class="badge bg-warning me-1 mb-1">
+                        ${mod.name}${mod.price !== 0 ? ` £${mod.price.toFixed(2)}` : ''}${mod.qty > 1 ? ` x${mod.qty}` : ''}
+                        <i class="bi bi-x-circle ms-1" style="cursor:pointer" onclick="removeCustomMod(${idx})"></i>
+                    </span>
+                `).join('');
+                
                 const productInfo = `
                     <div class="row">
-                        <div class="col-3">
-                            <div class="input-group mb-3">
-                                <button class="btn btn-primary btn-sm rounded-0" type="button" id="qty-minus" onclick="adjustQuantity('minus')"><span class="bi-dash"></span></button>
-                                <input type="text" id="qtyInput" class="form-control form-control-sm text-center" value="${quantity}" readonly>
-                                <button class="btn btn-primary btn-sm rounded-0" type="button" id="qty-plus" onclick="adjustQuantity('plus')"><span class="bi-plus"></span></button>
+                        <!-- Quantity & Remove -->
+                        <div class="col-12 mb-3">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div class="input-group" style="width: 140px;">
+                                    <button class="btn btn-primary btn-sm rounded-0" type="button" onclick="adjustQuantity('minus')">
+                                        <span class="bi-dash"></span>
+                                    </button>
+                                    <input type="text" id="qtyInput" class="form-control form-control-sm text-center" value="${quantity}" readonly>
+                                    <button class="btn btn-primary btn-sm rounded-0" type="button" onclick="adjustQuantity('plus')">
+                                        <span class="bi-plus"></span>
+                                    </button>
+                                </div>
+                                <button class="btn btn-danger btn-sm rounded-0" type="button" onclick="removeItem('${cartId}', '${cartProductId}', true)">
+                                    <span class="bi-trash"></span> Remove
+                                </button>
                             </div>
                         </div>
-                        <div class="col-9">
-                            <button class="btn btn-danger btn-sm rounded-0 float-end" type="button" id="itemRemove" onclick="removeItem('${cartId}', '${cartProductId}', 'true')"><span class="bi-trash"></span> Remove Item</button>
-                        </div>
+                        
                         <hr>
-                        <div class="col-md-6 row my-3" id="modifiers">
-                            ${modifiersHTML}
+                        
+                        <!-- Modifier Presets -->
+                        <div class="col-12 mb-3">
+                            <h6>Quick Modifiers</h6>
+                            <div class="row" id="modifierPresets">
+                                ${presetsHTML}
+                            </div>
                         </div>
-                        <div class="col-md-6">
-                            <label for="itemNote" class="form-label">Note for this item</label>
-                            <textarea class="form-control" id="itemNote" style="resize:none"></textarea>
-                        </div>
-                        ${badge === "" ? '' : `<p>${badge}</p>`}
-                        <div class="col-md-12 mt-3">
-                            <div class="simple-keyboard"></div>
-                        </div>
-                    </div>
-                    `;
+                        
+                        <hr>
+                        
+                            <!-- Custom Modifier Input -->
+                            <div class="col-md-6 mb-3">
+                                <h6>Add Custom Modifier</h6>
+                                <div class="row g-2 mb-2">
+                                    <div class="col-12">
+                                        <input type="text" class="form-control form-control-sm" id="customModName" placeholder="Modifier name (e.g. No onions)">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="input-group input-group-sm">
+                                            <span class="input-group-text">£</span>
+                                            <input type="text" 
+                                                class="form-control form-control-sm" 
+                                                id="customModPrice" 
+                                                placeholder="0.00"
+                                                pattern="-?[0-9]*\.?[0-9]{0,2}"
+                                                inputmode="decimal">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="input-group input-group-sm">
+                                            <span class="input-group-text">Qty</span>
+                                            <input type="text" 
+                                                class="form-control form-control-sm text-center" 
+                                                id="customModQty" 
+                                                value="1"
+                                                pattern="[0-9]*"
+                                                inputmode="numeric">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <button class="btn btn-success btn-sm w-100" type="button" onclick="addCustomMod()">
+                                            <i class="bi bi-plus"></i> Add
+                                        </button>
+                                    </div>
+                                </div>
+                                <div id="customModsList">
+                                    ${customModsHTML}
+                                </div>
+                            </div>
 
-                const footer = `
-                        <div class="col-12 ps-2">
-                            <button class="btn btn-success w-100" type="button" id="saveCartItemMods" onclick="saveCartItemMods(${cartProductId});">Save</button>
+                            <!-- Keyboard -->
+                            <div class="col-md-6 mb-3">
+                                <div class="simple-keyboard"></div>
+                            </div>
                         </div>
+                        
+                        <!-- Running Total -->
+                        <div class="col-12">
+                            <div class="alert alert-info mb-0">
+                                <strong>Modifier Total:</strong> <span id="modifierTotal">£0.00</span>
+                            </div>
+                        </div>
+                        
+                        ${badge === "" ? '' : `<div class="col-12 mt-2"><small class="text-muted">Options: ${badge}</small></div>`}
+                    </div>
                 `;
 
-                updateModal(productName + " £" + parseFloat(productPrice).toFixed(2), productInfo, footer);
+                const footer = `
+                    <div class="col-12">
+                        <button class="btn btn-success w-100" type="button" onclick="saveCartItemMods(${cartProductId})">
+                            <i class="bi bi-check-circle"></i> Save Changes
+                        </button>
+                    </div>
+                `;
+
+                updateModal(productName + " £" + parseFloat(productPrice).toFixed(2), productInfo, footer, 'modal-lg');
                 openModal();
+                
+                // Store existing custom mods for later
+                window.currentCustomMods = customMods;
+                
+                // Setup event listeners for preset checkboxes
                 setTimeout(() => {
+                    document.querySelectorAll('.mod-preset-check').forEach(checkbox => {
+                        checkbox.addEventListener('change', function() {
+                            const card = this.closest('.mod-card');
+                            const qtyControls = card.querySelector('.qty-controls');
+                            const priceControls = card.querySelector('.price-controls');
+                            
+                            if (this.checked) {
+                                card.classList.add('border-success');
+                                qtyControls.classList.remove('d-none');
+                                priceControls.classList.remove('d-none');
+                            } else {
+                                card.classList.remove('border-success');
+                                qtyControls.classList.add('d-none');
+                                priceControls.classList.add('d-none');
+                            }
+                            updateModifierTotal();
+                        });
+                    });
+                    
+                    updateModifierTotal();
+                    
+                    // Initialize keyboard
                     const keyboard = createSimpleKeyboard({
-                        inputIds: ['itemNote'],
-                        maxLength: 20
+                        inputIds: ['customModName'],
+                        maxLength: 30
                     });
                 }, 200);
             })
             .catch(error => {
-                console.error('Error fetching data:', error);
+                console.error('Error fetching modifier data:', error);
+                showToast('Error loading modifiers', false);
             });
     }
 
+    // Adjust modifier quantity
+    function adjustModQty(modId, delta) {
+        const qtyEl = document.getElementById(`mod-qty-${modId}`);
+        let currentQty = parseInt(qtyEl.textContent) || 1;
+        currentQty = Math.max(1, currentQty + delta);
+        qtyEl.textContent = currentQty;
+        updateModifierTotal();
+    }
+
+    // Add custom modifier
+    function addCustomMod() {
+        const nameInput = document.getElementById('customModName');
+        const priceInput = document.getElementById('customModPrice');
+        const qtyInput = document.getElementById('customModQty');
+        
+        const name = nameInput.value.trim();
+        if (!name) {
+            showToast('Please enter a modifier name', false);
+            return;
+        }
+        
+        const price = parseFloat(priceInput.value) || 0;
+        const qty = parseInt(qtyInput.value) || 1;
+        
+        window.currentCustomMods = window.currentCustomMods || [];
+        window.currentCustomMods.push({
+            modifier_id: 0,
+            name: name,
+            price: price,
+            qty: qty
+        });
+        
+        // Update display
+        renderCustomMods();
+        updateModifierTotal();
+        
+        // Clear inputs
+        nameInput.value = '';
+        priceInput.value = '';
+        qtyInput.value = '1';
+    }
+
+    // Remove custom modifier
+    function removeCustomMod(index) {
+        window.currentCustomMods.splice(index, 1);
+        renderCustomMods();
+        updateModifierTotal();
+    }
+
+    // Render custom mods list
+    function renderCustomMods() {
+        const container = document.getElementById('customModsList');
+        const mods = window.currentCustomMods || [];
+        
+        container.innerHTML = mods.map((mod, idx) => `
+            <span class="badge bg-warning me-1 mb-1">
+                ${mod.name}${mod.price !== 0 ? ` £${mod.price.toFixed(2)}` : ''}${mod.qty > 1 ? ` x${mod.qty}` : ''}
+                <i class="bi bi-x-circle ms-1" style="cursor:pointer" onclick="removeCustomMod(${idx})"></i>
+            </span>
+        `).join('');
+    }
+
+    // Calculate and display modifier total
+    function updateModifierTotal() {
+        let total = 0;
+        
+        // Sum preset modifiers from their price inputs
+        document.querySelectorAll('.mod-preset-check:checked').forEach(checkbox => {
+            const modId = checkbox.dataset.modId;
+            const price = parseFloat(document.getElementById(`mod-price-${modId}`).value) || 0;
+            const qty = parseInt(document.getElementById(`mod-qty-${modId}`).value) || 1;
+            total += price * qty;
+        });
+        
+        // Sum custom modifiers
+        (window.currentCustomMods || []).forEach(mod => {
+            total += (mod.price || 0) * (mod.qty || 1);
+        });
+        
+        // Update display
+        const totalEl = document.getElementById('modifierTotal');
+        if (total >= 0) {
+            totalEl.textContent = `+£${total.toFixed(2)}`;
+            totalEl.className = 'text-success';
+        } else {
+            totalEl.textContent = `-£${Math.abs(total).toFixed(2)}`;
+            totalEl.className = 'text-danger';
+        }
+    }
+
+    // Save modifiers
     function saveCartItemMods(cartItemId) {
-        const selectedCheckboxes = Array.from(document.querySelectorAll('input.mods-checkbox:checked'))
-            .map(checkbox => checkbox.value);
-        const textBoxValue = document.getElementById('itemNote').value;
-        const quantityValue = document.getElementById('qtyInput').value;
+        const quantity = document.getElementById('qtyInput').value;
+        
+        // Collect all modifiers
+        const mods = [];
+        
+        // Preset modifiers - read price from input field, not data attribute
+        document.querySelectorAll('.mod-preset-check:checked').forEach(checkbox => {
+            const modId = checkbox.dataset.modId;
+            const qtyEl = document.getElementById(`mod-qty-${modId}`);
+            const priceInput = document.getElementById(`mod-price-${modId}`);
+            
+            mods.push({
+                modifier_id: parseInt(modId),
+                name: checkbox.dataset.modName,
+                price: parseFloat(priceInput.value) || 0,
+                qty: parseInt(qtyEl.textContent) || 1  // Changed from .value to .textContent
+            });
+        });
+        
+        // Custom modifiers
+        (window.currentCustomMods || []).forEach(mod => {
+            mods.push({
+                modifier_id: 0,
+                name: mod.name,
+                price: mod.price || 0,
+                qty: mod.qty || 1
+            });
+        });
         
         const data = {
             cartItemId: cartItemId,
-            mods: selectedCheckboxes,
-            modsText: textBoxValue,
-            quantity: quantityValue
+            mods: mods,
+            quantity: quantity
         };
         
         fetch('/update_modifier', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
         })
-        .then(response => {
-            // Check if response is OK (status 200-299)
-            if (!response.ok) {
-                // Parse the error message from the response
-                return response.json().then(errorData => {
-                    throw new Error(errorData.error || 'Error updating item');
-                });
+        .then(response => response.json())
+        .then(result => {
+            if (result.error) {
+                showToast(result.error, false);
+            } else {
+                showToast('Item updated successfully', true);
+                fetchAndDisplayCartItems(getCurrentCartId());
+                closeModal();
             }
-            return response.json();
-        })
-        .then(data => {
-            // Success - refresh cart and close modal
-            showToast(data.message || 'Item updated successfully', true);
-            fetchAndDisplayCartItems(getCurrentCartId());
-            closeModal();
         })
         .catch(error => {
-            // Show error to user
             console.error('Error:', error);
-            showToast(error.message, false);
-            // Don't close modal so user can adjust quantity
+            showToast('Error saving modifiers', false);
         });
     }
 
