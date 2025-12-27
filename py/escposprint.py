@@ -281,7 +281,73 @@ def parse_modifiers(product_note):
     
     return mods
 
+def group_items_by_guest(item_list, print_groups, cover_select_print_groups):
+    """
+    Separate items into:
+    - shared_before: Items before guest sections (e.g., starters - print_group < min guest group)
+    - guest_items: Dict of {guest_number: [items]} for items needing guest grouping
+    - shared_after: Items after guest sections (e.g., drinks with no guest, or print_group > max guest group)
+    
+    Returns:
+        (shared_before, guest_items, shared_after)
+    """
+    shared_before = []
+    shared_after = []
+    guest_items = {}
+    
+    # Determine boundaries for guest grouping
+    if cover_select_print_groups:
+        min_guest_group = min(cover_select_print_groups)
+        max_guest_group = max(cover_select_print_groups)
+    else:
+        min_guest_group = 1
+        max_guest_group = 1
+    
+    for item in item_list:
+        item_print_group = print_groups.get(item.get('category_id'), 1)
+        guest_number = item.get('guest_number')
+        
+        # Item goes to guest grouping if:
+        # 1. Its print_group IS in cover_select_print_groups
+        # 2. AND it has a guest_number assigned
+        if item_print_group in cover_select_print_groups and guest_number is not None:
+            if guest_number not in guest_items:
+                guest_items[guest_number] = []
+            guest_items[guest_number].append(item)
+        else:
+            # Shared item - determine if before or after guest sections
+            if item_print_group < min_guest_group:
+                shared_before.append(item)
+            else:
+                shared_after.append(item)
+    
+    # Sort each group by category_order
+    shared_before.sort(key=lambda x: (x.get('category_order', 999), x.get('product_name', '')))
+    shared_after.sort(key=lambda x: (x.get('category_order', 999), x.get('product_name', '')))
+    for guest_num in guest_items:
+        guest_items[guest_num].sort(key=lambda x: (x.get('category_order', 999), x.get('product_name', '')))
+    
+    guest_items = dict(sorted(guest_items.items()))
+    
+    return shared_before, guest_items, shared_after
+
 def print_escpos_receipt(customer, items, status, tendered=None, change=None):
+    """
+    Customer receipt with guest grouping.
+    
+    Receipt structure:
+    - Starters (shared_before, print_group=0)
+    - _________________ (separator)
+    - Guest 1
+    -   2x Ribeye Steak
+    -   --------
+    - Guest 2
+    -   1x Fish & Chips
+    -   --------
+    - _________________ (separator)
+    - Drinks (shared_after, print_group=2)
+    - [totals]
+    """
     try:
         print_settings = json_utils.get_multiple_pos_settings("receipt_printer_settings", "escpos_printer_settings")
 
@@ -323,6 +389,7 @@ def print_escpos_receipt(customer, items, status, tendered=None, change=None):
         cart_note = cart_data.get('overall_note', "")
         employee_name = customer['employee_name']
         duplicate_text = " - DUPLICATE" if status != "completed" else ""
+        order_type = cart_data.get('order_type', customer.get('order_type', ''))
         
         # Customer info
         customer_info = f"{customer['customer_name']}"
@@ -342,21 +409,15 @@ def print_escpos_receipt(customer, items, status, tendered=None, change=None):
 
         printer.set(font=font, align='left', width=font_width, height=font_height, bold=False, custom_size=custom_size)
         
-        # --- PRINT RECEIPT ---
-        
-        # Header (centered)
+        # --- PRINT RECEIPT HEADER ---
         if status == "completed" or status == "reprint":
             printer.set(align='center')
             if header_text:
                 header_lines = header_text.split('\n')
-                # First line (store name) - bigger
                 printer.set(align='center', bold=True, width=2, height=2, custom_size=True)
                 printer.text(f"{header_lines[0]}\n")
-
-                # Small gap - print empty line at smaller height
                 printer.set(height=1, width=1, custom_size=True)
                 printer.text("\n")
-                # Rest of header - normal size
                 if len(header_lines) > 1:
                     printer.set(align='center', bold=False, width=font_width, height=font_height, custom_size=custom_size)
                     printer.text('\n'.join(header_lines[1:]) + "\n")
@@ -372,45 +433,31 @@ def print_escpos_receipt(customer, items, status, tendered=None, change=None):
         printer.text(f"SERVED BY: {employee_name}\n")
         printer.text("." * column_width + "\n")
         
-        # Customer info
         printer.text(f"{customer_info}\n")
         printer.text("." * column_width + "\n\n")
         printer.set(align='left', bold=False)
         
         # ============================================
-        # ITEMS - Sorted by print_group with separators
+        # ITEMS - With guest grouping
         # ============================================
         
-        # Get print groups and sort items
-        # ============================================
-        # ITEMS - Sorted by print_group with separators
-        # ============================================
-        
-        # Get print groups and sort items
         print_groups = posdb.get_category_print_groups()
-        item_list_sorted = sorted(item_list, key=lambda x: (
-            print_groups.get(x.get('category_id'), 1),
-            x.get('category_order', 999),
-            x.get('product_name', '')
-        ))
+        cover_config = posdb.get_cover_select_settings()
+        cover_select_print_groups = cover_config.get('print_groups', [1])
+        
+        # Separate items into before/guest/after groups
+        shared_before, guest_items, shared_after = group_items_by_guest(
+            item_list, print_groups, cover_select_print_groups
+        )
         
         total_price = 0.0
         discountable_subtotal = 0.0
         total_items = 0
         total_item_discount = 0.0
-        last_group = None
-
-        for item in item_list_sorted:
-            # --- Print group separator ---
-            current_group = print_groups.get(item.get('category_id'), 1)
-            
-            if last_group == 0 and current_group > 0:
-                printer.text("_" * column_width + "\n\n")
-            elif last_group == 1 and current_group == 2:
-                printer.text("_" * column_width + "\n\n")
-            
-            last_group = current_group
-            # --- End separator logic ---
+        
+        # Helper function to print a single item
+        def print_item(item, printer, column_width):
+            nonlocal total_price, discountable_subtotal, total_items, total_item_discount
             
             product = item.get('product_name')
             quantity = int(item.get('quantity') or 0)
@@ -420,10 +467,9 @@ def print_escpos_receipt(customer, items, status, tendered=None, change=None):
             item_discount_type = item.get('product_discount_type')
             options_data = item.get('options', "")
 
-            # Base price x quantity
             item_total_price = base_price * quantity
 
-            # --- Parse and calculate options ---
+            # Parse options
             option_lines = []
             if options_data:
                 options = [option.split('|') for option in options_data.split(', ')]
@@ -439,25 +485,22 @@ def print_escpos_receipt(customer, items, status, tendered=None, change=None):
                     total_option_price = option_price * option_qty * quantity
                     item_total_price += total_option_price
 
-                    # Format option line with right-aligned price
                     if option_name:
                         option_lines.append(
                             format_option_line(option_name, option_price, option_qty, quantity, show_options_price)
                         )
 
-            # --- Parse and calculate modifiers ---
+            # Parse modifiers
             mod_lines = []
             mods = parse_modifiers(product_note)
             for mod in mods:
                 mod_total = mod['price'] * mod['qty'] * quantity
                 item_total_price += mod_total
-
-                # Format modifier line with inline price
                 mod_lines.append(
                     format_mod_line(mod['name'], mod['price'], mod['qty'], quantity)
                 )
 
-            # Per-item discount
+            # Apply per-item discount
             if item_discount_amount > 0:
                 discounted_price = calculate_cart_discounts(item_discount_amount, item_discount_type, item_total_price)
                 item_level_discount = item_total_price - discounted_price
@@ -470,24 +513,51 @@ def print_escpos_receipt(customer, items, status, tendered=None, change=None):
             product_display = f"{product}*" if item_level_discount > 0 else product
             printer.text(format_wrapped_line(quantity, product_display, discounted_price, column_width, price_width=7))
 
-            # Print options
             for line in option_lines:
                 printer.text(f"{line}\n")
-
-            # Print modifiers
             for line in mod_lines:
                 printer.text(f"{line}\n")
-            
-            # Add spacing after options/mods
             if option_lines or mod_lines:
                 printer.text("\n")
 
             total_items += quantity
             total_price += discounted_price
 
-            # Track discountable subtotal (cpn truthy)
             if item.get('cpn') in (1, '1', True):
                 discountable_subtotal += discounted_price
+
+        # --- PRINT SHARED ITEMS BEFORE (STARTERS) ---
+        for item in shared_before:
+            print_item(item, printer, column_width)
+        
+        # --- SEPARATOR AFTER STARTERS ---
+        if shared_before and (guest_items or shared_after):
+            printer.text("_" * column_width + "\n\n")
+        
+        # --- PRINT GUEST-GROUPED ITEMS (MAINS) ---
+        if guest_items:
+            sorted_guests = sorted(guest_items.keys())
+            
+            for idx, guest_num in enumerate(sorted_guests):
+                guest_item_list = guest_items[guest_num]
+                
+                printer.set(bold=True)
+                printer.text(f"Guest {guest_num}\n")
+                printer.set(bold=False)
+                
+                for item in guest_item_list:
+                    print_item(item, printer, column_width)
+                
+                if idx < len(sorted_guests) - 1:
+                    printer.text("  " + "-" * (column_width - 4) + "\n")
+        
+        # --- SEPARATOR BEFORE DRINKS ---
+        if guest_items and shared_after:
+            printer.text("_" * column_width + "\n\n")
+        
+        # --- PRINT SHARED ITEMS AFTER (DRINKS) ---
+        for item in shared_after:
+            print_item(item, printer, column_width)
         
         # Notes section
         if cart_note:
@@ -503,7 +573,6 @@ def print_escpos_receipt(customer, items, status, tendered=None, change=None):
         # --- Totals ---
         sub_total = total_price
 
-        # Cart-level discount ONLY on discountable_subtotal
         applied_discount = 0.0
         if cart_discount > 0:
             if cart_discount_type == "fixed":
@@ -511,10 +580,8 @@ def print_escpos_receipt(customer, items, status, tendered=None, change=None):
             elif cart_discount_type == "percentage":
                 applied_discount = (discountable_subtotal * cart_discount) / 100.0
 
-        # Subtotal after cart-level discount
         display_total_after_discount = max(0.0, sub_total - applied_discount)
 
-        # Service AFTER discount
         if customer['order_type'] == "dine":
             service_amount = (display_total_after_discount * cart_service_charge) / 100.0
             service_label = f"SERVICE ({cart_service_charge:.0f}%)"
@@ -524,7 +591,6 @@ def print_escpos_receipt(customer, items, status, tendered=None, change=None):
         
         grand_total = round(display_total_after_discount + service_amount, 2)
 
-        # Print totals
         printer.text("." * column_width + "\n")
         sub_total_width = adjusted_width(column_width, f"{pound_sign}{sub_total:.2f}")
         printer.text(f"SUBTOTAL:".ljust(sub_total_width) + f"{pound_sign}{sub_total:.2f}\n")
@@ -589,7 +655,6 @@ def print_escpos_receipt(customer, items, status, tendered=None, change=None):
         printer.set(align='center', font='b', width=1, height=1, bold=True, custom_size=custom_size)
         printer.text(f"Printed: {datetime.now().strftime('%d/%m/%y %I:%M%p')}\n")
         
-        # Add space and cut
         printer.text("\n\n")
         printer.cut()
         printer.close()
@@ -1173,15 +1238,15 @@ def mark_section_printed(items_to_mark):
 def print_section_receipt(customer, items, section='kitchen', mode='normal'):
     """
     Unified print function for kitchen or bar.
-    Now includes print_group sorting and separators.
+    
+    IMPORTANT: 
+    - Kitchen: Groups items by guest (server needs to know who ordered what)
+    - Bar: NO guest grouping (just prints drink list - barkeep doesn't need to know)
     
     section: 'kitchen' or 'bar'
     mode: 'normal', 'new_only', or 'reprint'
-    
-    Returns: 'printed', 'no_items', 'disabled', or 'error'
     """
     
-    # Check if this section is enabled
     section_enabled = posdb.get_setting_bool(f'{section}_print', default=False)
     section_printer = posdb.get_setting_str(f'{section}_printer', default='')
     
@@ -1193,7 +1258,6 @@ def print_section_receipt(customer, items, section='kitchen', mode='normal'):
         print(f"[INFO] No {section} printer configured.")
         return "disabled"
 
-    # Get print settings
     print_settings = json_utils.get_multiple_pos_settings("escpos_printer_settings")
     escpos_settings = print_settings.get("escpos_printer_settings", [])
     escpos = escpos_settings[0] if escpos_settings else {}
@@ -1215,7 +1279,7 @@ def print_section_receipt(customer, items, section='kitchen', mode='normal'):
     if section == 'kitchen':
         section_items = [item for item in item_list if item['product_id'] not in excluded_ids]
         section_label = "KITCHEN"
-    else:
+    else:  # bar
         section_items = [item for item in item_list if item['product_id'] in excluded_ids]
         section_label = "BAR"
 
@@ -1259,15 +1323,30 @@ def print_section_receipt(customer, items, section='kitchen', mode='normal'):
         print(f"[INFO] No {section} items to print.")
         return "no_items"
 
-    # ============================================
-    # Sort by print_group
-    # ============================================
+    # Get print groups and cover settings
     print_groups = posdb.get_category_print_groups()
+    cover_config = posdb.get_cover_select_settings()
+    cover_select_print_groups = cover_config.get('print_groups', [1])
+
+    # Sort items
     items_to_print_sorted = sorted(items_to_print, key=lambda x: (
         print_groups.get(x.get('category_id'), 1),
         x.get('category_order', 999),
         x.get('product_name', '')
     ))
+
+    # ============================================
+    # KEY DIFFERENCE: Kitchen groups by guest, Bar does NOT
+    # ============================================
+    if section == 'kitchen':
+        # Kitchen: Group by guest
+        shared_items, guest_items = group_items_by_guest(
+            items_to_print_sorted, print_groups, cover_select_print_groups
+        )
+    else:
+        # Bar: No grouping - all items are "shared"
+        shared_items = items_to_print_sorted
+        guest_items = {}
 
     # Build customer info
     cart_id = customer_data['cart_id']
@@ -1318,30 +1397,13 @@ def print_section_receipt(customer, items, section='kitchen', mode='normal'):
         
         printer.set(font=font, align='left', width=font_width, height=font_height, bold=False, custom_size=custom_size)
         
-        # ============================================
-        # Print items with separators
-        # ============================================
-        total_items = 0
-        last_group = None
-
-        for item in items_to_print_sorted:
-            # --- Print group separator ---
-            current_group = print_groups.get(item.get('category_id'), 1)
-            
-            if last_group == 0 and current_group > 0:
-                printer.text("_" * column_width + "\n\n")
-            elif last_group == 1 and current_group == 2:
-                printer.text("_" * column_width + "\n\n")
-            
-            last_group = current_group
-            # --- End separator logic ---
-
+        # Helper to print single item (no prices on section receipts)
+        def print_section_item(item, printer, column_width):
             product = item.get('product_name')
             quantity = item['print_quantity']
             product_note = item.get('product_note', '')
             options_data = item.get('options', "")
 
-            # --- Parse options (no prices on section receipts) ---
             option_lines = []
             if options_data:
                 options = [option.split('|') for option in options_data.split(', ')]
@@ -1351,34 +1413,64 @@ def print_section_receipt(customer, items, section='kitchen', mode='normal'):
                         option_qty = int(option[4]) if len(option) > 4 else 1
                     except (IndexError, ValueError):
                         option_qty = 1
-
                     if option_name:
                         qty_str = f"{option_qty}x " if option_qty > 1 else ""
                         option_lines.append(f"  + {qty_str}{option_name}")
 
-            # --- Parse modifiers (no prices on section receipts) ---
             mod_lines = []
             mods = parse_modifiers(product_note)
             for mod in mods:
                 qty_str = f"{mod['qty']}x " if mod['qty'] > 1 else ""
                 mod_lines.append(f"  - {qty_str}{mod['name']}")
 
-            # Print product line (no price on section receipts)
             printer.text(f"{quantity}x {product}\n")
-
-            # Print options
             for line in option_lines:
                 printer.text(f"{line}\n")
-
-            # Print modifiers
             for line in mod_lines:
                 printer.text(f"{line}\n")
-            
-            # Add spacing
             if option_lines or mod_lines:
                 printer.text("\n")
 
-            total_items += quantity
+            return quantity
+
+        # ============================================
+        # Print items
+        # ============================================
+        total_items = 0
+        last_group = None
+
+        # Print shared items first
+        for item in shared_items:
+            current_group = print_groups.get(item.get('category_id'), 1)
+            
+            if last_group == 0 and current_group > 0:
+                printer.text("_" * column_width + "\n\n")
+            elif last_group == 1 and current_group == 2:
+                printer.text("_" * column_width + "\n\n")
+            
+            last_group = current_group
+            total_items += print_section_item(item, printer, column_width)
+        
+        # Separator after shared items (only if there are guest items)
+        if shared_items and guest_items:
+            printer.text("_" * column_width + "\n\n")
+        
+        # Print guest-grouped items (kitchen only)
+        if guest_items:
+            sorted_guests = sorted(guest_items.keys())
+            
+            for idx, guest_num in enumerate(sorted_guests):
+                guest_item_list = guest_items[guest_num]
+                
+                printer.set(bold=True)
+                printer.text(f"Guest {guest_num}\n")
+                printer.set(bold=False)
+                
+                for item in guest_item_list:
+                    total_items += print_section_item(item, printer, column_width)
+                
+                if idx < len(sorted_guests) - 1:
+                    printer.text("  " + "-" * (column_width - 4) + "\n")
         
         if cart_note:
             printer.text("." * column_width + "\n")
