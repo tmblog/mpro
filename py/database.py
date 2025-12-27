@@ -1268,57 +1268,6 @@ def get_item_by_barcode(barcode):
 # ROOM CRUD FUNCTIONS
 # ============================================
 
-# def create_dining_rooms_table():
-#     """Create the dining_rooms table if it doesn't exist"""
-#     try:
-#         conn, cursor = get_database_connection()
-#         cursor.execute('''
-#             CREATE TABLE IF NOT EXISTS dining_rooms (
-#                 room_id INTEGER PRIMARY KEY AUTOINCREMENT,
-#                 room_label TEXT NOT NULL UNIQUE,
-#                 room_order INTEGER DEFAULT 0
-#             )
-#         ''')
-#         conn.commit()
-#         conn.close()
-#         return True
-#     except Exception as e:
-#         print(f"Error creating dining_rooms table: {e}")
-#         return False
-
-# def migrate_dining_tables_add_room_id():
-#     """Add room_id column to dining_tables if it doesn't exist"""
-#     try:
-#         conn, cursor = get_database_connection()
-#         # Check if column exists
-#         cursor.execute("PRAGMA table_info(dining_tables)")
-#         columns = [col[1] for col in cursor.fetchall()]
-        
-#         if 'room_id' not in columns:
-#             cursor.execute('ALTER TABLE dining_tables ADD COLUMN room_id INTEGER REFERENCES dining_rooms(room_id)')
-#             conn.commit()
-#         conn.close()
-#         return True
-#     except Exception as e:
-#         print(f"Error migrating dining_tables: {e}")
-#         return False
-
-# def migrate_cart_dining_tables_add_table_id():
-#     """Add table_id column to cart_dining_tables if it doesn't exist"""
-#     try:
-#         conn, cursor = get_database_connection()
-#         cursor.execute("PRAGMA table_info(cart_dining_tables)")
-#         columns = [col[1] for col in cursor.fetchall()]
-        
-#         if 'table_id' not in columns:
-#             cursor.execute('ALTER TABLE cart_dining_tables ADD COLUMN table_id INTEGER REFERENCES dining_tables(table_id)')
-#             conn.commit()
-#         conn.close()
-#         return True
-#     except Exception as e:
-#         print(f"Error migrating cart_dining_tables: {e}")
-#         return False
-
 def get_all_rooms():
     """Get all dining rooms ordered by room_order"""
     try:
@@ -2213,11 +2162,13 @@ def complete_checkout_v2(cart_id, payment_method, discounted_total, split_charge
         
         # VAT Calculation with multi-option support
         vat_rate = json_utils.get_vat_rate()
+
         if vat_rate > 0:
             cursor.execute("""
                 SELECT 
                     ci.price, ci.quantity, ci.product_discount_type, 
                     ci.product_discount, ci.vatable, ci.options,
+                    ci.product_note,  -- ADD THIS
                     c.order_type, c.cart_discount_type, c.cart_discount
                 FROM cart_item ci
                 JOIN cart c ON ci.cart_id = c.cart_id
@@ -2227,10 +2178,10 @@ def complete_checkout_v2(cart_id, payment_method, discounted_total, split_charge
             if items:
                 cart_total = 0
                 vatable_total = 0
-                order_type = items[0][6]
+                order_type = items[0][7]  # Index shifted due to product_note
                 
                 for item in items:
-                    base_price, base_qty, disc_type, disc_amount, base_vatable, options_str, _, _, _ = item
+                    base_price, base_qty, disc_type, disc_amount, base_vatable, options_str, mods_str, _, _, _ = item
                     options = helpers.parse_options(options_str)
                     
                     # 1. Calculate base item
@@ -2246,11 +2197,16 @@ def complete_checkout_v2(cart_id, payment_method, discounted_total, split_charge
                         if order_type == 'dine' or opt['vatable']:
                             options_vat_amount += opt_total
                     
-                    # 3. Combined total before discounts
-                    combined_total = base_total + options_total
-                    combined_vatable = base_vat_amount + options_vat_amount
+                    # 3. Calculate modifier prices (NEW)
+                    mods_total = helpers.calculate_mods_total(mods_str) * base_qty
+                    # Modifiers follow base item VAT status
+                    mods_vat_amount = mods_total if (order_type == 'dine' or base_vatable) else 0
                     
-                    # 4. Apply item-level discount proportionally
+                    # 4. Combined total before discounts
+                    combined_total = base_total + options_total + mods_total
+                    combined_vatable = base_vat_amount + options_vat_amount + mods_vat_amount
+                    
+                    # 5. Apply item-level discount proportionally
                     if disc_amount > 0:
                         combined_total = helpers.calculate_cart_discounts(disc_amount, disc_type, combined_total)
                         if combined_total > 0:
@@ -2416,30 +2372,287 @@ def delete_cart_item(cart_item_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
         
-def get_modifiers():
+def get_modifiers(category_id=None):
+    """
+    Get modifiers, optionally filtered by category.
+    Returns modifiers where category_id matches OR category_id is NULL (global modifiers).
+    """
     try:
         conn, cursor = get_database_connection()
-        cursor.execute('SELECT * FROM product_modifiers')
+        
+        if category_id:
+            cursor.execute('''
+                SELECT modifier_id, modifier_name, COALESCE(modifier_price, 0) as modifier_price, category_id
+                FROM product_modifiers
+                WHERE category_id IS NULL OR category_id = ?
+                ORDER BY modifier_name
+            ''', (category_id,))
+        else:
+            cursor.execute('''
+                SELECT modifier_id, modifier_name, COALESCE(modifier_price, 0) as modifier_price, category_id
+                FROM product_modifiers
+                ORDER BY modifier_name
+            ''')
+        
         mods = cursor.fetchall()
         conn.close()
         return mods
     except Exception as e:
         return f"Error getting modifiers: {e}"
+    
+def get_modifiers_for_cart_item(cart_item_id):
+    """
+    Get existing modifiers for a cart item.
+    Returns parsed modifier data from product_note.
+    """
+    try:
+        conn, cursor = get_database_connection()
+        cursor.execute('''
+            SELECT product_note, ci.category_order, p.category_id
+            FROM cart_item ci
+            LEFT JOIN products p ON ci.product_id = p.product_id
+            WHERE cart_item_id = ?
+        ''', (cart_item_id,))
+        
+        result = cursor.fetchone()
+        conn.close()
+        
+        if not result:
+            return {'mods': [], 'category_id': None}
+        
+        product_note = result[0] or ''
+        category_id = result[2]
+        
+        # Parse the modifier string
+        mods = []
+        if product_note:
+            for mod_str in product_note.split(', '):
+                parts = mod_str.split('|')
+                if len(parts) >= 4:
+                    # New format: modifier_id|name|price|qty
+                    mods.append({
+                        'modifier_id': int(parts[0]) if parts[0].isdigit() else 0,
+                        'name': parts[1],
+                        'price': float(parts[2]) if parts[2] else 0,
+                        'qty': int(parts[3]) if parts[3].isdigit() else 1
+                    })
+                elif len(parts) == 1 and parts[0]:
+                    # Legacy format: just the name (backwards compatibility)
+                    mods.append({
+                        'modifier_id': 0,
+                        'name': parts[0],
+                        'price': 0,
+                        'qty': 1
+                    })
+        
+        return {'mods': mods, 'category_id': category_id}
+    except Exception as e:
+        return {'error': str(e), 'mods': [], 'category_id': None}
 
-def add_mod(modifier):
-    conn, cursor = get_database_connection()
-    cursor.execute(
-            "INSERT INTO product_modifiers (modifier_name) VALUES (?)",
-                (modifier,)
-            )
-    conn.commit()
-    conn.close()
+def update_cart_item_with_mods(item_id, mods_data, quantity):
+    """
+    Update cart item with new modifier format.
+    mods_data = [
+        {'modifier_id': 1, 'name': 'Extra cheese', 'price': 0.50, 'qty': 2},
+        {'modifier_id': 0, 'name': 'Custom note', 'price': 0, 'qty': 1},
+    ]
+    """
+    conn = None
+    try:
+        conn, cursor = get_database_connection()
+        
+        # Get the product_id and current cart_id for this cart item
+        cursor.execute("""
+            SELECT product_id, cart_id, quantity as current_quantity 
+            FROM cart_item 
+            WHERE cart_item_id = ?
+        """, (item_id,))
+        
+        cart_item = cursor.fetchone()
+        if not cart_item:
+            return jsonify({"error": "Cart item not found"}), 404
+        
+        product_id = cart_item[0]
+        cart_id = cart_item[1]
+        current_quantity = cart_item[2]
+        
+        # Check if product has inventory tracking enabled
+        cursor.execute("""
+            SELECT track_inventory, stock_quantity, product_name 
+            FROM products 
+            WHERE product_id = ?
+        """, (product_id,))
+        
+        product = cursor.fetchone()
+        if not product:
+            return jsonify({"error": "Product not found"}), 404
+        
+        track_inventory = product[0]
+        stock_quantity = product[1]
+        product_name = product[2]
+        
+        # If inventory tracking is enabled, validate stock
+        if track_inventory == 1:
+            cursor.execute("""
+                SELECT COALESCE(SUM(quantity), 0) 
+                FROM cart_item 
+                WHERE cart_id = ? 
+                AND product_id = ? 
+                AND cart_item_id != ?
+            """, (cart_id, product_id, item_id))
+            
+            other_items_quantity = cursor.fetchone()[0]
+            new_total_quantity = other_items_quantity + int(quantity)
+            
+            if new_total_quantity > stock_quantity:
+                available = stock_quantity - other_items_quantity
+                return jsonify({
+                    "error": f"Insufficient stock for {product_name}. Available: {available}, Requested: {quantity}"
+                }), 400
+        
+        # Build the modifier string in new format: modifier_id|name|price|qty
+        mod_strings = []
+        for mod in mods_data:
+            mod_id = mod.get('modifier_id', 0)
+            name = mod.get('name', '').replace('|', '-').replace(',', '-')  # Sanitize
+            price = mod.get('price', 0)
+            qty = mod.get('qty', 1)
+            mod_strings.append(f"{mod_id}|{name}|{price}|{qty}")
+        
+        combined_mods = ', '.join(mod_strings)
+        
+        # Update the cart item
+        cursor.execute("""
+            UPDATE cart_item 
+            SET product_note = ?, quantity = ? 
+            WHERE cart_item_id = ?
+        """, (combined_mods, quantity, item_id))
+        
+        conn.commit()
+        return jsonify({"message": "Item modified successfully"}), 200
+        
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return jsonify({"error": f"Error updating item: {str(e)}"}), 500
+    finally:
+        if conn:
+            conn.close()   
 
-def delete_mod(mod_id):
-    conn, cursor = get_database_connection()
-    cursor.execute('DELETE FROM product_modifiers WHERE modifier_id = ?', (mod_id,))
-    conn.commit()
-    conn.close()
+def add_modifier(modifier_name, modifier_price=0, category_id=None):
+    """Add a new modifier preset"""
+    try:
+        conn, cursor = get_database_connection()
+        cursor.execute(
+            "INSERT INTO product_modifiers (modifier_name, modifier_price, category_id) VALUES (?, ?, ?)",
+            (modifier_name, modifier_price, category_id if category_id else None)
+        )
+        conn.commit()
+        new_id = cursor.lastrowid
+        conn.close()
+        return {'success': True, 'modifier_id': new_id}
+    except Exception as e:
+        return {'error': str(e)}
+
+def add_modifiers_bulk(modifiers):
+    """
+    Bulk add multiple modifiers.
+    modifiers = [
+        {'modifier_name': 'Extra cheese', 'modifier_price': 0.50, 'category_id': None},
+        {'modifier_name': 'No onions', 'modifier_price': -0.30, 'category_id': 2},
+        ...
+    ]
+    Returns: {'added': [...], 'errors': [...]}
+    """
+    added = []
+    errors = []
+    
+    try:
+        conn, cursor = get_database_connection()
+        
+        for mod in modifiers:
+            name = mod.get('modifier_name', '').strip()
+            price = float(mod.get('modifier_price', 0))
+            category_id = mod.get('category_id')
+            
+            if not name:
+                errors.append({'name': name, 'error': 'Empty name'})
+                continue
+            
+            try:
+                cursor.execute(
+                    "INSERT INTO product_modifiers (modifier_name, modifier_price, category_id) VALUES (?, ?, ?)",
+                    (name, price, category_id)
+                )
+                added.append({
+                    'modifier_id': cursor.lastrowid,
+                    'modifier_name': name,
+                    'modifier_price': price,
+                    'category_id': category_id
+                })
+            except sqlite3.IntegrityError as e:
+                errors.append({'name': name, 'error': 'Duplicate entry'})
+            except Exception as e:
+                errors.append({'name': name, 'error': str(e)})
+        
+        conn.commit()
+        conn.close()
+        
+        return {'added': added, 'errors': errors}
+    except Exception as e:
+        return {'error': str(e)}
+
+def update_modifier(modifier_id, modifier_name, modifier_price=0, category_id=None):
+    """Update an existing modifier"""
+    try:
+        conn, cursor = get_database_connection()
+        cursor.execute(
+            "UPDATE product_modifiers SET modifier_name = ?, modifier_price = ?, category_id = ? WHERE modifier_id = ?",
+            (modifier_name, modifier_price, category_id if category_id else None, modifier_id)
+        )
+        conn.commit()
+        conn.close()
+        return {'success': True}
+    except Exception as e:
+        return {'error': str(e)}
+
+def delete_modifier(modifier_id):
+    """Delete a modifier"""
+    try:
+        conn, cursor = get_database_connection()
+        cursor.execute('DELETE FROM product_modifiers WHERE modifier_id = ?', (modifier_id,))
+        conn.commit()
+        conn.close()
+        return {'success': True}
+    except Exception as e:
+        return {'error': str(e)}
+
+def get_all_modifiers_with_details():
+    """Get all modifiers with category names for admin view"""
+    try:
+        conn, cursor = get_database_connection()
+        cursor.execute('''
+            SELECT 
+                pm.modifier_id, 
+                pm.modifier_name, 
+                COALESCE(pm.modifier_price, 0) as modifier_price, 
+                pm.category_id,
+                c.category_name
+            FROM product_modifiers pm
+            LEFT JOIN category c ON pm.category_id = c.category_id
+            ORDER BY pm.modifier_name
+        ''')
+        mods = cursor.fetchall()
+        conn.close()
+        return [{
+            'modifier_id': m[0],
+            'modifier_name': m[1],
+            'modifier_price': m[2],
+            'category_id': m[3],
+            'category_name': m[4] or 'All Categories'
+        } for m in mods]
+    except Exception as e:
+        return {'error': str(e)}
 
 def get_options():
     try:
@@ -2697,25 +2910,22 @@ def add_table(table_number):
 def get_cart_discount(cart_id):
     try:
         conn, cursor = get_database_connection()
-        # Query to retrieve the discount and the total_price without options price
         cursor.execute(
             """
-            SELECT cart.cart_discount_type, cart.cart_discount, COALESCE(SUM(cart_item.quantity * cart_item.price), 0) AS total_price
+            SELECT cart.cart_discount_type, cart.cart_discount
             FROM cart
-            LEFT JOIN cart_item ON cart.cart_id = cart_item.cart_id
             WHERE cart.cart_id = ?
-            GROUP BY cart.cart_id
             """,
             (cart_id,)
         )
         cart_discount = cursor.fetchone()
-        discount_type, discount_value, total_price = cart_discount
+        discount_type, discount_value = cart_discount
         
         total_price = 0
         item_discount_total = 0
         cursor.execute(
             """
-            SELECT product_discount_type, product_discount, price, quantity, options
+            SELECT product_discount_type, product_discount, price, quantity, options, product_note
             FROM cart_item
             WHERE cart_id = ?
             """,
@@ -2725,9 +2935,10 @@ def get_cart_discount(cart_id):
         results = cursor.fetchall()
 
         for row in results:
-            product_discount_type, product_discount, price, quantity, options = row
+            product_discount_type, product_discount, price, quantity, options, product_note = row
 
-            options_total_price = 0  # Reset options_total_price to 0 for each item
+            options_total_price = 0
+            mods_total_price = 0
 
             # Calculate options total price
             if options:
@@ -2738,17 +2949,28 @@ def get_cart_discount(cart_id):
                         option_price = float(option_data[2]) * int(option_data[4])
                         options_total_price += option_price
 
-            each_item_price = (price + options_total_price) * quantity
+            # Calculate modifiers total price (NEW)
+            if product_note:
+                for mod_str in product_note.split(', '):
+                    parts = mod_str.split('|')
+                    if len(parts) >= 4:
+                        try:
+                            mod_price = float(parts[2]) * int(parts[3])
+                            mods_total_price += mod_price
+                        except (ValueError, IndexError):
+                            pass
+
+            each_item_price = (price + options_total_price + mods_total_price) * quantity
 
             if product_discount > 0:
                 if product_discount_type == 'fixed':
                     discounted_amount = product_discount * quantity
                 elif product_discount_type == 'percentage':
                     discounted_amount = (product_discount / 100) * each_item_price
-                # Sum the discounted amounts
+                else:
+                    discounted_amount = 0
                 item_discount_total += discounted_amount
 
-            # Sum the total price including options for all items
             total_price += each_item_price
 
         result = {
@@ -3699,6 +3921,120 @@ def update_save_new_option(data):
     finally:
         conn.close()
 
+# New bulk add option items to an option group
+def add_option_items_bulk(options):
+    """
+    Bulk add option items to an option group.
+    
+    Args:
+        options: List of dicts with keys:
+            - optionName (str): Name of the option item
+            - inPrice (float): In price
+            - outPrice (float): Out price  
+            - parentId (int): The option_id to add items to
+            - vatable (int): 1 or 0
+    
+    Returns:
+        dict with 'added' count and 'skipped' count
+    """
+    try:
+        conn, cursor = get_database_connection()
+        
+        added = []
+        skipped = 0
+        
+        for opt in options:
+            option_name = opt.get('optionName', '').strip()
+            in_price = float(opt.get('inPrice', 0))
+            out_price = float(opt.get('outPrice', 0))
+            option_id = int(opt.get('parentId', 0))
+            vatable = int(opt.get('vatable', 1))
+            
+            if not option_name or not option_id:
+                skipped += 1
+                continue
+            
+            try:
+                # Check if this option item name already exists in option_items table
+                cursor.execute(
+                    "SELECT option_item_id FROM option_items WHERE option_item_name = ?",
+                    (option_name,)
+                )
+                existing_item = cursor.fetchone()
+                
+                if existing_item:
+                    option_item_id = existing_item[0]
+                    
+                    # Check if already linked to this option group
+                    cursor.execute(
+                        "SELECT COUNT(*) FROM option_item_groups WHERE option_id = ? AND option_item_id = ? AND is_hidden = 0",
+                        (option_id, option_item_id)
+                    )
+                    if cursor.fetchone()[0] > 0:
+                        skipped += 1
+                        continue
+                else:
+                    # Insert new option item
+                    cursor.execute(
+                        "INSERT INTO option_items (option_item_name) VALUES (?)",
+                        (option_name,)
+                    )
+                    option_item_id = cursor.lastrowid
+                
+                # Link to option group with prices
+                cursor.execute(
+                    "INSERT INTO option_item_groups (option_id, option_item_id, option_item_in_price, option_item_out_price, vatable) VALUES (?, ?, ?, ?, ?)",
+                    (option_id, option_item_id, in_price, out_price, vatable)
+                )
+                
+                added.append({
+                    'option_item_id': option_item_id,
+                    'option_name': option_name,
+                    'in_price': in_price,
+                    'out_price': out_price
+                })
+                
+            except Exception as e:
+                print(f"Error adding option item '{option_name}': {e}")
+                skipped += 1
+                continue
+        
+        conn.commit()
+        
+        return {
+            'success': True,
+            'added': len(added),
+            'skipped': skipped,
+            'items': added
+        }
+        
+    except Exception as e:
+        print(f"Error in bulk add option items: {e}")
+        return {'error': str(e)}
+    finally:
+        conn.close()
+
+def reorder_option_items(option_id, items):
+    """Update the order of option items within a group."""
+    try:
+        conn, cursor = get_database_connection()
+        
+        for item in items:
+            cursor.execute('''
+                UPDATE option_item_groups 
+                SET option_item_group_order = ? 
+                WHERE option_id = ? AND option_item_id = ?
+            ''', (item['option_order'], option_id, item['option_item_id']))
+        
+        conn.commit()
+        return {'success': True}
+        
+    except Exception as e:
+        print(f"Error reordering option items: {e}")
+        return {'error': str(e)}
+    finally:
+        conn.close()
+
 def get_refunded_orders(start_date, end_date):
     conn = None
     try:
@@ -3735,22 +4071,6 @@ def get_refunded_orders(start_date, end_date):
     finally:
         if conn:
             conn.close()
-
-# def save_product_options_bulk(data):
-#     try:
-#         selected_options = data['selectedOptions']
-#         selected_products = data['selectedProducts']
-#         print("products", selected_products)
-#         print("options", selected_options)
-#         conn, cursor = get_database_connection()
-#         for product_id in selected_products:
-#             for option_id in selected_options:
-#                 cursor.execute("INSERT INTO product_options (product_id, option_id) VALUES (?, ?)", (product_id, option_id))
-#         conn.commit()
-#         conn.close()
-#         return jsonify({'message': 'Data inserted successfully'}), 200
-#     except Exception as e:
-#         return jsonify({'error': str(e)}), 500
             
 def save_product_options_bulk(data):
     try:
