@@ -8,6 +8,8 @@ import traceback, re, json
 import helpers
 from decimal import Decimal, ROUND_CEILING
 
+show_options_price = True  # From settings later
+
 pound_on = posdb.get_setting("pound_sign")
 if pound_on is None:
     posdb.set_setting("pound_sign", 0)
@@ -105,6 +107,179 @@ def format_online_receipt(order, column_width):
     items = re.sub(r'~', '\n', items)
     
     return items
+
+def format_mods_for_print(product_note, column_width, price_width=7):
+    """
+    Parse and format modifiers for receipt printing.
+    New format: modifier_id|name|price|qty, modifier_id|name|price|qty, ...
+    Legacy format: name|name|name
+    
+    Returns list of formatted lines with prices right-aligned.
+    """
+    if not product_note:
+        return []
+    
+    formatted = []
+    
+    # Split by comma for new format
+    for mod_str in product_note.split(', '):
+        mod_str = mod_str.strip()
+        if not mod_str:
+            continue
+            
+        parts = mod_str.split('|')
+        
+        if len(parts) >= 4:
+            # New format: modifier_id|name|price|qty
+            name = parts[1]
+            try:
+                price = float(parts[2])
+            except (ValueError, IndexError):
+                price = 0
+            try:
+                qty = int(parts[3])
+            except (ValueError, IndexError):
+                qty = 1
+            
+            # Build display string
+            qty_str = f"{qty}x " if qty > 1 else ""
+            left_part = f"  - {qty_str}{name}"
+            
+            if price != 0:
+                # Format price with sign
+                if price > 0:
+                    price_str = f"+{pound_sign}{price:.2f}"
+                else:
+                    price_str = f"-{pound_sign}{abs(price):.2f}"
+                
+                # Calculate padding for right alignment
+                left_width = column_width - len(price_str)
+                line = left_part.ljust(left_width) + price_str
+            else:
+                line = left_part
+            
+            formatted.append(line)
+            
+        elif len(parts) == 1:
+            # Legacy format: just the name (split by pipe gave us individual names)
+            # This handles old "spicy|no onions|well done" format
+            formatted.append(f"  - {parts[0]}")
+        else:
+            # Partial format - try to use what we have
+            name = parts[1] if len(parts) > 1 else parts[0]
+            formatted.append(f"  - {name}")
+    
+    # If nothing parsed from comma split, try legacy pipe split
+    if not formatted and '|' in product_note and ',' not in product_note:
+        # Pure legacy format: name|name|name
+        for name in product_note.split('|'):
+            if name.strip():
+                formatted.append(f"  - {name.strip()}")
+    
+    return formatted
+
+def format_mods_for_kitchen(product_note):
+    """
+    Parse modifiers for kitchen receipt - NO prices shown.
+    """
+    if not product_note:
+        return []
+    
+    formatted = []
+    
+    for mod_str in product_note.split(', '):
+        mod_str = mod_str.strip()
+        if not mod_str:
+            continue
+            
+        parts = mod_str.split('|')
+        
+        if len(parts) >= 4:
+            # New format: modifier_id|name|price|qty
+            name = parts[1]
+            try:
+                qty = int(parts[3])
+            except (ValueError, IndexError):
+                qty = 1
+            
+            qty_str = f"{qty}x " if qty > 1 else ""
+            formatted.append(f"  - {qty_str}{name}")
+            
+        elif len(parts) == 1 and parts[0].strip():
+            formatted.append(f"  - {parts[0].strip()}")
+    
+    # Legacy fallback
+    if not formatted and '|' in product_note and ',' not in product_note:
+        for name in product_note.split('|'):
+            if name.strip():
+                formatted.append(f"  - {name.strip()}")
+    
+    return formatted
+
+def format_option_line(option_name, price, qty, item_qty, show_price=True):
+    """Format option line with inline price."""
+    prefix = "  + "
+    qty_str = f"{qty}x " if qty > 1 else ""
+    
+    if show_price and price != 0:
+        line_total = price * qty * item_qty
+        sign = "+" if line_total >= 0 else "-"
+        price_str = f" ({sign}{pound_sign}{abs(line_total):.2f})"
+    else:
+        price_str = ""
+    
+    return f"{prefix}{qty_str}{option_name}{price_str}"
+
+def format_mod_line(mod_name, price, qty, item_qty):
+    """Format modifier line with inline price."""
+    prefix = "  - "
+    qty_str = f"{qty}x " if qty > 1 else ""
+    
+    if price != 0:
+        line_total = price * qty * item_qty
+        sign = "+" if line_total >= 0 else "-"
+        price_str = f" ({sign}{pound_sign}{abs(line_total):.2f})"
+    else:
+        price_str = ""
+    
+    return f"{prefix}{qty_str}{mod_name}{price_str}"
+
+def parse_modifiers(product_note):
+    """
+    Parse modifier string into list of dicts.
+    Handles both new format (modifier_id|name|price|qty) and legacy format (name|name|name).
+    """
+    mods = []
+    if not product_note:
+        return mods
+    
+    # Try new comma-separated format first
+    if ', ' in product_note or (product_note.count('|') >= 3):
+        for mod_str in product_note.split(', '):
+            mod_str = mod_str.strip()
+            if not mod_str:
+                continue
+            parts = mod_str.split('|')
+            if len(parts) >= 4:
+                try:
+                    mods.append({
+                        'name': parts[1],
+                        'price': float(parts[2]) if parts[2] else 0,
+                        'qty': int(parts[3]) if parts[3] else 1
+                    })
+                except (ValueError, IndexError):
+                    # Fallback - just use as name
+                    mods.append({'name': mod_str, 'price': 0, 'qty': 1})
+            elif len(parts) == 1 and parts[0]:
+                mods.append({'name': parts[0], 'price': 0, 'qty': 1})
+    else:
+        # Legacy pipe-separated format: name|name|name
+        for name in product_note.split('|'):
+            name = name.strip()
+            if name:
+                mods.append({'name': name, 'price': 0, 'qty': 1})
+    
+    return mods
 
 def print_escpos_receipt(customer, items, status, tendered=None, change=None):
     try:
@@ -207,6 +382,11 @@ def print_escpos_receipt(customer, items, status, tendered=None, change=None):
         # ============================================
         
         # Get print groups and sort items
+        # ============================================
+        # ITEMS - Sorted by print_group with separators
+        # ============================================
+        
+        # Get print groups and sort items
         print_groups = posdb.get_category_print_groups()
         item_list_sorted = sorted(item_list, key=lambda x: (
             print_groups.get(x.get('category_id'), 1),
@@ -243,25 +423,39 @@ def print_escpos_receipt(customer, items, status, tendered=None, change=None):
             # Base price x quantity
             item_total_price = base_price * quantity
 
-            # Options
+            # --- Parse and calculate options ---
             option_lines = []
             if options_data:
                 options = [option.split('|') for option in options_data.split(', ')]
                 for option in options:
-                    option_name = option[1]
+                    option_name = option[1] if len(option) > 1 else ''
                     try:
-                        option_price = float(option[2])
-                        option_qty = int(option[4])
+                        option_price = float(option[2]) if len(option) > 2 else 0
+                        option_qty = int(option[4]) if len(option) > 4 else 1
                     except (IndexError, ValueError):
-                        option_price = 0.0
+                        option_price = 0
                         option_qty = 1
 
                     total_option_price = option_price * option_qty * quantity
                     item_total_price += total_option_price
 
-                    qty_str = f"{option_qty}x " if option_qty > 1 else ""
-                    price_str = f" ({total_option_price:.2f})" if option_price > 0 else ""
-                    option_lines.append(f"{qty_str}{option_name}{price_str}")
+                    # Format option line with right-aligned price
+                    if option_name:
+                        option_lines.append(
+                            format_option_line(option_name, option_price, option_qty, quantity, show_options_price)
+                        )
+
+            # --- Parse and calculate modifiers ---
+            mod_lines = []
+            mods = parse_modifiers(product_note)
+            for mod in mods:
+                mod_total = mod['price'] * mod['qty'] * quantity
+                item_total_price += mod_total
+
+                # Format modifier line with inline price
+                mod_lines.append(
+                    format_mod_line(mod['name'], mod['price'], mod['qty'], quantity)
+                )
 
             # Per-item discount
             if item_discount_amount > 0:
@@ -274,16 +468,19 @@ def print_escpos_receipt(customer, items, status, tendered=None, change=None):
 
             # Print product line
             product_display = f"{product}*" if item_level_discount > 0 else product
-            printer.textln(format_wrapped_line(quantity, product_display, discounted_price, column_width, price_width=7))
+            printer.text(format_wrapped_line(quantity, product_display, discounted_price, column_width, price_width=7))
 
             # Print options
-            if option_lines:
-                print_block(printer, option_lines, "  +", spacing=2)
+            for line in option_lines:
+                printer.text(f"{line}\n")
 
-            # Print notes
-            if product_note:
-                notes = product_note.split("|")
-                print_block(printer, notes, "  -", spacing=2)
+            # Print modifiers
+            for line in mod_lines:
+                printer.text(f"{line}\n")
+            
+            # Add spacing after options/mods
+            if option_lines or mod_lines:
+                printer.text("\n")
 
             total_items += quantity
             total_price += discounted_price
@@ -493,15 +690,15 @@ def print_kitchen_receipt(customer, items):
         # Base price x quantity
         item_total_price = base_price * quantity
 
-        # --- Handle options ---
+        # --- Parse options (no prices on kitchen) ---
         option_lines = []
         if options_data:
             options = [option.split('|') for option in options_data.split(', ')]
             for option in options:
-                option_name = option[1]
+                option_name = option[1] if len(option) > 1 else ''
                 try:
-                    option_price = float(option[2])
-                    option_qty = int(option[4])
+                    option_price = float(option[2]) if len(option) > 2 else 0
+                    option_qty = int(option[4]) if len(option) > 4 else 1
                 except (IndexError, ValueError):
                     option_price = 0
                     option_qty = 1
@@ -509,9 +706,21 @@ def print_kitchen_receipt(customer, items):
                 total_option_price = option_price * option_qty * quantity
                 item_total_price += total_option_price
 
-                qty_str = f"{option_qty}x " if option_qty > 1 else ""
-                price_str = f" ({total_option_price:.2f})" if option_price > 0 else ""
-                option_lines.append(f"{qty_str}{option_name}{price_str}")
+                # Kitchen: no prices, just name with qty
+                if option_name:
+                    qty_str = f"{option_qty}x " if option_qty > 1 else ""
+                    option_lines.append(f"  + {qty_str}{option_name}")
+
+        # --- Parse modifiers (no prices on kitchen) ---
+        mod_lines = []
+        mods = parse_modifiers(product_note)
+        for mod in mods:
+            mod_total = mod['price'] * mod['qty'] * quantity
+            item_total_price += mod_total
+            
+            # Kitchen: no prices, just name with qty
+            qty_str = f"{mod['qty']}x " if mod['qty'] > 1 else ""
+            mod_lines.append(f"  - {qty_str}{mod['name']}")
 
         # --- Apply discount ---
         if item_discount_amount > 0:
@@ -524,16 +733,19 @@ def print_kitchen_receipt(customer, items):
 
         # Print product line
         product_display = f"{product}*" if item_level_discount > 0 else product
-        printer.textln(format_wrapped_line(quantity, product_display, discounted_price, column_width, price_width=7))
+        printer.text(format_wrapped_line(quantity, product_display, discounted_price, column_width, price_width=7))
 
         # Print options
-        if option_lines:
-            print_block(printer, option_lines, "  +", spacing=2)
+        for line in option_lines:
+            printer.text(f"{line}\n")
 
-        # Print notes
-        if product_note:
-            notes = product_note.split("|")
-            print_block(printer, notes, "  -", spacing=2)
+        # Print modifiers
+        for line in mod_lines:
+            printer.text(f"{line}\n")
+        
+        # Add spacing after options/mods
+        if option_lines or mod_lines:
+            printer.text("\n")
 
         total_items += quantity
         total_price += discounted_price
@@ -1129,27 +1341,42 @@ def print_section_receipt(customer, items, section='kitchen', mode='normal'):
             product_note = item.get('product_note', '')
             options_data = item.get('options', "")
 
+            # --- Parse options (no prices on section receipts) ---
             option_lines = []
             if options_data:
                 options = [option.split('|') for option in options_data.split(', ')]
                 for option in options:
-                    option_name = option[1]
+                    option_name = option[1] if len(option) > 1 else ''
                     try:
-                        option_qty = int(option[4])
+                        option_qty = int(option[4]) if len(option) > 4 else 1
                     except (IndexError, ValueError):
                         option_qty = 1
 
-                    qty_str = f"{option_qty}x " if option_qty > 1 else ""
-                    option_lines.append(f"{qty_str}{option_name}")
+                    if option_name:
+                        qty_str = f"{option_qty}x " if option_qty > 1 else ""
+                        option_lines.append(f"  + {qty_str}{option_name}")
 
-            printer.textln(f"{quantity}x {product}\n")
+            # --- Parse modifiers (no prices on section receipts) ---
+            mod_lines = []
+            mods = parse_modifiers(product_note)
+            for mod in mods:
+                qty_str = f"{mod['qty']}x " if mod['qty'] > 1 else ""
+                mod_lines.append(f"  - {qty_str}{mod['name']}")
 
-            if option_lines:
-                print_block(printer, option_lines, "  +", spacing=2)
+            # Print product line (no price on section receipts)
+            printer.text(f"{quantity}x {product}\n")
 
-            if product_note:
-                notes = product_note.split("|")
-                print_block(printer, notes, "  -", spacing=2)
+            # Print options
+            for line in option_lines:
+                printer.text(f"{line}\n")
+
+            # Print modifiers
+            for line in mod_lines:
+                printer.text(f"{line}\n")
+            
+            # Add spacing
+            if option_lines or mod_lines:
+                printer.text("\n")
 
             total_items += quantity
         
