@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% block title %}Guest Tracking Settings{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center">
+        <h5><i class="bi bi-people-fill me-2"></i>Guest Tracking Settings</h5>
+    </div>
+
+    <div class="card">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">Cover Select Configuration</h5>
+        </div>
+        <div class="card-body">
+            <!-- Enable Toggle -->
+            <div class="mb-4">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="enabledToggle" 
+                           {% if settings.enabled %}checked{% endif %}>
+                    <label class="form-check-label fw-bold" for="enabledToggle">
+                        Enable Guest Tracking
+                    </label>
+                </div>
+                <small class="text-muted">When enabled, staff will be prompted to select which guest each item is for.</small>
+            </div>
+
+            <hr>
+
+            <!-- Order Methods -->
+            <div class="mb-4">
+                <label class="form-label fw-bold">Apply to Order Types</label>
+                <div class="row">
+                    <div class="col-auto">
+                        <div class="form-check">
+                            <input class="form-check-input method-check" type="checkbox" value="dine" id="methodDine"
+                                   {% if 'dine' in settings.methods %}checked{% endif %}>
+                            <label class="form-check-label" for="methodDine">Dine In</label>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <div class="form-check">
+                            <input class="form-check-input method-check" type="checkbox" value="takeaway" id="methodTakeaway"
+                                   {% if 'takeaway' in settings.methods %}checked{% endif %}>
+                            <label class="form-check-label" for="methodTakeaway">Takeaway</label>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <div class="form-check">
+                            <input class="form-check-input method-check" type="checkbox" value="delivery" id="methodDelivery"
+                                   {% if 'delivery' in settings.methods %}checked{% endif %}>
+                            <label class="form-check-label" for="methodDelivery">Delivery</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <hr>
+
+            <!-- Print Groups -->
+            <div class="mb-4">
+                <label class="form-label fw-bold">Require Guest Selection for Print Groups</label>
+                <small class="text-muted d-block mb-2">Select which print groups should prompt for guest assignment.</small>
+                <div class="row">
+                    <div class="col-auto">
+                        <div class="form-check">
+                            <input class="form-check-input print-group-check" type="checkbox" value="0" id="printGroup0"
+                                   {% if 0 in settings.print_groups %}checked{% endif %}>
+                            <label class="form-check-label" for="printGroup0">
+                                <span class="badge bg-secondary">0</span> Starters
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <div class="form-check">
+                            <input class="form-check-input print-group-check" type="checkbox" value="1" id="printGroup1"
+                                   {% if 1 in settings.print_groups %}checked{% endif %}>
+                            <label class="form-check-label" for="printGroup1">
+                                <span class="badge bg-primary">1</span> Mains
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <div class="form-check">
+                            <input class="form-check-input print-group-check" type="checkbox" value="2" id="printGroup2"
+                                   {% if 2 in settings.print_groups %}checked{% endif %}>
+                            <label class="form-check-label" for="printGroup2">
+                                <span class="badge bg-info">2</span> Drinks
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <hr>
+
+            <!-- Info Box -->
+            <!-- <div class="alert alert-info">
+                <h6><i class="bi bi-info-circle me-2"></i>How it works</h6>
+                <ul class="mb-0">
+                    <li><strong>Starters (print_group 0)</strong> are always shared - no guest prompt</li>
+                    <li><strong>Mains (print_group 1)</strong> will prompt for guest selection if checked above</li>
+                    <li><strong>Drinks (print_group 2)</strong> can be assigned to guests or left shared</li>
+                    <li>Receipts will group items by guest with separators</li>
+                    <li>Kitchen receipts show guest assignments; bar receipts do not</li>
+                </ul>
+            </div> -->
+
+            <!-- Save Button -->
+            <div class="text-end">
+                <button class="btn btn-primary btn-lg" onclick="saveSettings()">
+                    <i class="bi bi-check-lg me-2"></i>Save Settings
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block footer %}
+<script src="{{ url_for('static', filename='js/pos.helpers.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sweetalert.min.js') }}"></script>
+<script>
+function saveSettings() {
+    const enabled = document.getElementById('enabledToggle').checked;
+    
+    const methods = [];
+    document.querySelectorAll('.method-check:checked').forEach(cb => {
+        methods.push(cb.value);
+    });
+    
+    const printGroups = [];
+    document.querySelectorAll('.print-group-check:checked').forEach(cb => {
+        printGroups.push(parseInt(cb.value));
+    });
+    
+    fetch('/api/cover-select-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            enabled: enabled,
+            methods: methods,
+            print_groups: printGroups
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            Swal.fire({
+                icon: 'success',
+                title: 'Saved!',
+                text: 'Guest tracking settings updated.',
+                timer: 1500,
+                showConfirmButton: false
+            });
+        }
+    })
+    .catch(err => {
+        Swal.fire('Error', 'Failed to save settings', 'error');
+    });
+}
+</script>
+{% endblock %}
