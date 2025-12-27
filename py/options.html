@@ -1,0 +1,589 @@
+{% extends "base.html" %}
+
+{% block title %}Product Options{% endblock %}
+
+{% block content %}
+
+<div class="row mt-2">
+    <div class="col-md-12">
+        <div class="card flex-fill w-100" style="height: 95vh;">
+            <div class="card-header">
+                <div class="float-end row">
+                    <div class="col-auto">
+                        <div class="btn-toolbar" role="toolbar">
+                            <div class="btn-group me-2 btn-group-sm" >
+                                <button type="button" class="btn btn-success" onclick="newOption();">New Option</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <h5 class="card-title mb-0">{{ back_link|safe}} Options</h5>
+                <span class="badge bg-danger" id="editMessage"></span>
+            </div>
+            <div class="card-body row pt-2 pb-3 bg-secondary-subtle mx-0">
+                <div class="col-md-4 border rounded-0 overflow-auto" style="height: 85vh;">
+                    <div id="optionContainer" class="list-group bg-light">
+                        {% for option in options %}
+                        <div class="list-group-item py-2 rounded-1 mb-1 fs-5">
+                            {{ option[1] }}
+                            <button class="btn btn-danger float-end" onclick="deleteOption(this,'{{option[0]}}', 'o')"><i class="bi bi-trash"></i></button>
+                            <button class="btn btn-primary float-end me-2" onclick="showOptionData('{{option[1]}}', '{{option[3]}}', '{{option[4]}}', '{{option[0]}}', '{{option[2]}}');">Edit</button>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="col-md-8">
+                    <div id="optionEdit">
+                        
+                    </div>
+                    <div id="optionItemEdit">
+                
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+{% block footer %}
+<script src="{{ url_for('static', filename='js/pos.helpers.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sweetalert.min.js') }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const modalElement = document.getElementById('myModal');
+
+    modalElement.addEventListener('shown.bs.modal', function() {
+        const optionsTemplate = document.getElementById('optionsTemplate');
+        const productsTemplate = document.getElementById('productsTemplate');
+        if (!optionsTemplate || !productsTemplate) {
+            return;
+        }
+        function updateFields(selectElement) {
+            const selectedOption = selectElement.options[selectElement.selectedIndex];
+            const optionItemId = selectedOption.value;
+            const optionName = selectedOption.textContent.trim();
+            const inPrice = selectedOption.getAttribute('data-in_price') || "0";
+            const outPrice = selectedOption.getAttribute('data-out_price') || "0";
+
+            document.getElementById('option_item_id').value = optionItemId;
+            document.getElementById('option_name').value = optionName;
+            document.getElementById('in_price').value = inPrice;
+            document.getElementById('out_price').value = outPrice;
+        }
+
+        optionsTemplate.addEventListener('change', function() {
+            updateFields(this);
+            //document.getElementById('option_name').setAttribute('readonly', true);
+        });
+
+        productsTemplate.addEventListener('change', function() {
+            document.getElementById('option_item_id').value = "";
+            updateFields(this);
+            //document.getElementById('option_name').removeAttribute('readonly');
+        });
+    });
+});
+    
+const optionContainer = document.getElementById("optionEdit");
+const optionList = document.getElementById("optionItemEdit");
+
+function showOptionData(name, type, required, id, order) {
+    optionContainer.innerHTML = createOptionEditHtml(name, type, required, id, order);
+    optionList.innerHTML = "";
+
+    fetch(`/get_all_option_items/${id}`)
+        .then(response => response.json())
+        .then(data => {
+            console.log(data);
+            const htmlContent = generateOptionItemsHTML(data);
+            optionList.innerHTML += htmlContent;
+        })
+        .catch(error => {
+            console.error("Error fetching data:", error);
+        });
+}
+
+function generateOptionItemsHTML(data) {
+    let htmlContent = `<div class="row mx-2" style="max-height: 70vh; overflow-y: auto;">`;
+    htmlContent += `<table class="table table-sm table-hover table-striped">`;
+    htmlContent += `
+        <thead>
+            <tr>
+                <th scope="col">Name</th>
+                <th scope="col">In Price</th>
+                <th scope="col">Out Price</th>
+                <th scope="col">Vatable</th>
+                <th scope="col">Action</th>
+            </tr>
+        </thead>
+    `;
+    data.forEach((item) => {
+        htmlContent += `
+        <tr>
+            <td class="w-auto">
+                <input type="text" id="option_name_${item[0]}" class="form-control" value="${item[2]}">
+            </td>
+            <td>
+                <input type="text" class="form-control" id="in_price_${item[0]}" value="${item[3]}">
+            </td>
+            <td>
+                <input type="text" class="form-control" id="out_price_${item[0]}" value="${item[4]}">
+            </td>
+             <td>
+                <input type="checkbox" class="btn-check" id="vatable_${item[0]}" ${item[6] ? 'checked' : ''}>
+                <label class="btn btn-outline-warning" for="vatable_${item[0]}">Vatable</label>
+            </td>
+            <td class="text-nowrap">
+                <button class="btn btn-primary" type="button" onclick="updateOptionItem(this, ${item[0]}, 'update')"><i class="bi bi-floppy"></i></button> 
+                <button class="btn btn-danger" type="button" onclick="updateOptionItem(this, ${item[0]}, 'delete')"><i class="bi bi-trash"></i></button>
+            </td>
+        </tr>
+        `;
+    });
+    htmlContent += `</table>`;
+    htmlContent += `</div>`;
+    
+    return htmlContent;
+}
+
+function createOptionEditHtml(name, type, required, id, order) {
+    return `
+        <div class="row p-2 g-2">
+            <div class="col border bg-light p-2 d-flex align-items-center">
+                <input type="text" class="form-control flex-grow-1 me-" id="optionName" value="${name}">
+                <span class="input-group-text ms-1">Order</span>
+                <input type="number" value="${order}" class="form-control w-25" min="1" step="1" oninput="this.value = this.value.replace(/^0+/, ''); this.value = Math.abs(this.value) || 1" name="optionOrder" id="optionOrder">
+                <input type="hidden" value="${id}" id="optionParentId">
+                <div class="btn-group ms-2">
+                    <button onclick="updateOption('update')" class="btn btn-primary">Save</button>
+                    <button onclick="newOptionItem()" class="btn btn-success">New</button>
+                    <button onclick="copyOptionItems(${id})" class="btn btn-secondary">Copy</button>
+                </div>
+            </div>
+        </div>
+        `;
+}
+
+function copyOptionItems(newOptionId) {
+    const existingItems = 
+        `<div class="row">
+            <div class="col-md-12">
+                <div class="alert alert-light mb-3" role="alert">
+                Choose an option to copy from. Enter new prices below. It will apply to all items in the selected option. You can delete or edit prices/names after it is copied.
+                </div>
+                <select class="form-select border border-info mb-3" id="copyOptionsTemplate" onchange="clearCopyOptionPrices()">
+                    <option selected>Choose Option to copy from</option>
+                    {% for option in options %}
+                        <option value="{{ option[0]}}">{{ option[1] }}</option>
+                    {% endfor %}
+                </select>
+                
+                <div class="row g-2 mb-3">
+                    <div class="col-md-6">
+                        <input type="number" class="form-control" id="copyInPrice" placeholder="In Price">
+                    </div>
+                    <div class="col-md-6">
+                        <input type="number" class="form-control" id="copyOutPrice" placeholder="Out Price">
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div id="copyOptionAlert" class="d-none mb-3"></div>`;
+    const footer = 
+        `<div class="col-12 ps-2">
+            <button class="btn btn-success w-100" type="button" onclick="copyOptionItemToNew(${newOptionId})">Save</button>
+        </div>`;
+    updateModal('Copy all option items', existingItems, footer);
+    openModal();
+}
+
+function clearCopyOptionPrices() {
+    document.getElementById('copyInPrice').value = '';
+    document.getElementById('copyOutPrice').value = '';
+}
+
+function copyOptionItemToNew(newOptionId) {
+    // Clear previous alerts
+    const alertElement = document.getElementById('copyOptionAlert');
+    alertElement.innerHTML = '';
+    alertElement.classList.add('d-none');
+    
+    // Get selected option
+    const selectElement = document.getElementById('copyOptionsTemplate');
+    const selectedOption = selectElement.options[selectElement.selectedIndex];
+    
+    // Validate selection
+    if (selectElement.selectedIndex === 0) {
+        showOptionAlert('Please select an option to copy from', 'danger');
+        return false;
+    }
+    
+    // Get option ID and name
+    const optionId = selectedOption.value;
+    const optionName = selectedOption.text.trim();
+    
+    // Get and validate prices
+    const inPriceInput = document.getElementById('copyInPrice').value.trim();
+    const outPriceInput = document.getElementById('copyOutPrice').value.trim();
+    
+    // Validate in price (mandatory)
+    if (!inPriceInput) {
+        showOptionAlert('In Price is required', 'danger');
+        return false;
+    }
+    
+    // Convert prices to float
+    let inPrice, outPrice;
+    
+    try {
+        inPrice = parseFloat(inPriceInput);
+        if (isNaN(inPrice)) throw new Error('Invalid In Price');
+        
+        if (outPriceInput) {
+            outPrice = parseFloat(outPriceInput);
+            if (isNaN(outPrice)) throw new Error('Invalid Out Price');
+        } else {
+            // If out price not provided, set it equal to in price
+            outPrice = inPrice;
+        }
+    } catch (e) {
+        showOptionAlert(e.message, 'danger');
+        return false;
+    }
+    
+    // Prepare the data to be sent
+    const optionData = {
+        new_option_id: newOptionId,
+        copy_option_id: optionId,
+        in_price: inPrice,
+        out_price: outPrice
+    };
+    
+    // Make the fetch request
+    fetch('/copy_option_items', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify(optionData)
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
+    })
+    .then(data => {
+        showOptionAlert('Option items copied successfully!', 'success');
+        setTimeout(closeModal, 1500); // Close modal after 1.5 seconds
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showOptionAlert('Failed to copy option items: ' + error.message, 'danger');
+    });
+}
+
+function showOptionAlert(message, type) {
+    const alertElement = document.getElementById('copyOptionAlert');
+    alertElement.innerHTML = `
+        <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    `;
+    alertElement.classList.remove('d-none');
+}
+
+function newOptionItem() {
+    const newOptionItemHtml = 
+        `<div class="row">
+            <div class="col-md-12">
+                <select class="form-select border border-info" id="optionsTemplate">
+                    <option selected>Create from options</option>
+                    {% for option_name, options in options_template_list.options.items() %}
+                        <optgroup label="{{ option_name }}">
+                            {% for option in options %}
+                                <option value="{{ option.option_item_id }}" data-in_price="{{ option.option_item_in_price }}" data-out_price="{{ option.option_item_out_price }}">
+                                    {{ option.option_item_name }} {{ "£" ~ option.option_item_in_price if option.option_item_in_price > 0 else "" }}
+                                </option>
+                            {% endfor %}
+                        </optgroup>
+                    {% else %}
+                        <option disabled>No options available</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-12 my-2">
+                <select class="form-select border border-dark" id="productsTemplate">
+                    <option selected>Create from products</option>
+                    {% for product in options_template_list.products %}
+                        <option value="" data-in_price="{{ product.in_price }}" data-out_price="{{ product.out_price }}">
+                            {{ product.product_name }}
+                        </option>
+                    {% else %}
+                        <option disabled>No products available</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6">
+                <label for="option_name" class="form-label">Option Name:</label>
+                <input type="text" id="option_name" class="form-control" value="">
+            </div>
+            <div class="col-2">
+                <label for="in_price" class="form-label">In Price:</label>
+                <input type="text" class="form-control" id="in_price" value="0">
+            </div>
+            <div class="col-2">
+                <label for="out_price" class="form-label">Out Price:</label>
+                <input type="text" class="form-control" id="out_price" value="0">
+            </div>
+            <div class="col-2">
+                <br>
+                <input type="checkbox" class="btn-check" id="vatable" checked>
+                <label class="btn btn-outline-danger mt-1" for="vatable">Vatable</label>
+            </div>
+                <input type="hidden" id="option_item_id">
+            <div class="col-12 mt-2 text-danger" id="newOptionMessage">
+
+            </div>
+        </div>
+        `;
+    const footer = 
+        `<div class="col-12 ps-2">
+            <button class="btn btn-success w-100" type="button" onclick="updateOptionItem(this, 0, 'new')">Save</button>
+        </div>`;
+    updateModal('New Option Item', newOptionItemHtml, footer);
+    openModal();
+}
+
+function newOption() {
+    const newOptionHtml = 
+        `<div class="row">
+            <h4>Create a new option first then add option items from the list.</h4>
+            <div class="col-md-12">
+                <label for="optionParentName" class="form-label">Option Name:</label>
+                <input type="text" id="optionParentName" class="form-control" value="">
+            </div>
+            <div class="col-12 mt-2 text-danger" id="newOptionMessage">
+            </div>
+        </div>
+        `;
+        const footer = 
+        `<div class="col-12 ps-2">
+            <button class="btn btn-success w-100" type="button" onclick="updateOption('new');">Save</button>
+        </div>`;
+    updateModal('New Option', newOptionHtml, footer);
+    openModal();
+}
+
+function deleteOption(button, option_id, type, undo=null) {
+    var listItem = button.closest('.list-group-item');
+    var requestData = {
+        inventory_item_id: option_id,
+        type: type,
+    };
+    if (undo) {
+        requestData.undo = 0;
+    }
+    fetch('/update_inventory_item', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestData),
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log(data);
+        swal.fire("Success!", "Changes were saved", "success");
+        undo ? button.remove() : listItem.remove();
+    })
+    .catch(error => {
+        console.error('Error:', error);
+    });
+}
+
+function updateOptionItem(button, id, method) {
+    var tr = button.closest('tr');
+    var payload = { id: id };
+    var parentId = document.getElementById('optionParentId').value;
+    var messageElement = document.getElementById('editMessage');
+    var modalMessageElement = document.getElementById('newOptionMessage');
+    const optionsTemplate = document.getElementById('optionsTemplate');
+    const productsTemplate = document.getElementById('productsTemplate');
+
+    if (method === 'update') {
+        var optionName = tr.querySelector(`#option_name_${id}`).value;
+        var inPrice = tr.querySelector(`#in_price_${id}`).value;
+        var outPrice = tr.querySelector(`#out_price_${id}`).value;
+        var vatable = tr.querySelector(`#vatable_${id}`).checked ? 1 : 0;
+        
+        if (optionName.trim() === '' || inPrice.trim() === '') {
+            messageElement.innerText = 'Option name and in price cannot be empty.';
+            return;
+        }
+
+        if (isNaN(parseFloat(inPrice))) {
+            messageElement.innerText = 'In price must be a valid number.';
+            return;
+        }
+
+        if (outPrice.trim() === '') {
+            outPrice = inPrice;
+        }
+        if (isNaN(parseFloat(outPrice))) {
+            messageElement.innerText = 'Out price must be a valid number.';
+            return;
+        }
+
+        payload.optionName = optionName;
+        payload.inPrice = inPrice;
+        payload.outPrice = outPrice;
+        payload.vatable = vatable;
+        payload.parentId = parentId;
+    }
+
+    if (method === 'new') {
+        
+        var optionName = document.getElementById('option_name').value;
+        var inPrice = document.getElementById('in_price').value;
+        var outPrice = document.getElementById('out_price').value;
+        var vatable = document.getElementById('vatable').checked ? 1 : 0;
+        var option_item_id = document.getElementById('option_item_id').value;
+
+        if (optionName.trim() === '' || inPrice.trim() === '') {
+            modalMessageElement.innerText = 'Option name and in price cannot be empty.';
+            return;
+        }
+
+        if (isNaN(parseFloat(inPrice))) {
+            modalMessageElement.innerText = 'In price must be a valid number.';
+            return;
+        }
+
+        if (outPrice.trim() === '' || outPrice.trim() === '0' || outPrice.trim() === '0.0') {
+            outPrice = inPrice;
+        }
+        if (isNaN(parseFloat(outPrice))) {
+            modalMessageElement.innerText = 'Out price must be a valid number.';
+            return;
+        }
+
+        payload.optionName = optionName;
+        payload.inPrice = inPrice;
+        payload.outPrice = outPrice;
+        payload.parentId = parentId;
+        payload.vatable = vatable;
+        payload.option_item_id = option_item_id;
+    }
+
+    fetch(`/update_delete_option_item`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            method: method,
+            ...payload,
+        }),
+    })
+    .then(response => {
+        if (response.ok) {
+            messageElement.innerText = "Updated successfuly.";
+            if (method === 'delete') {
+                tr.remove();
+                //swal.fire("Success!", "Item deleted", "success");
+                showToast("Item Deleted", true)
+            }
+            else if (method === 'new') {
+                // closeModal();
+                response.json().then(data => {
+                    if(data.message == "exists") {
+                        modalMessageElement.innerHTML = "Option already exists";
+                    }
+                    else {
+                        document.getElementById('option_name').value = "";
+                        document.getElementById('in_price').value = "0";
+                        document.getElementById('out_price').value = "0";
+                        // Reset both dropdowns to the first item
+                        optionsTemplate.selectedIndex = 0;
+                        productsTemplate.selectedIndex = 0;
+                        modalMessageElement.innerHTML = "New option added, close or add more";
+                    }
+                });
+            }
+            else {
+                //swal.fire("Success!", "Changes were saved", "success");
+                showToast("Saved", true)
+            }
+        } else {
+            console.error('Error performing operation');
+            showToast("Error", false)
+        }
+    })
+    .catch(error => console.error('Error:', error))
+    .finally(() => {
+        messageElement.innerText = '';
+    });
+}
+
+function updateOption(method) {
+    var messageElement = document.getElementById('editMessage');
+    var modalMessageElement = document.getElementById('newOptionMessage');
+    var payload = {};
+    if (method === 'new') {
+        var optionName = document.getElementById('optionParentName').value;
+        if (optionName.trim() === '') {
+            modalMessageElement.innerText = 'Option name cannot be empty.';
+            return;
+        }
+    }
+
+    if (method === 'update') {
+        var optionId = document.getElementById('optionParentId').value;
+        var optionName = document.getElementById('optionName').value;
+        var optionOrder = document.getElementById('optionOrder').value;
+        if (optionName.trim() === '') {
+            messageElement.innerText = 'Option name cannot be empty.';
+            return;
+        }
+        payload.id = optionId;
+        payload.order = optionOrder;
+    }
+
+    payload.optionName = optionName;
+    //payload.type = type;
+    payload.method = method;
+
+    fetch(`/update_save_option`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+    })
+    .then(response => {
+        if (response.ok) {
+            messageElement.innerText = "Updated successfuly.";
+            if (method === 'new') {
+                closeModal();
+                location.reload();
+            }
+            else {
+                //swal.fire("Success!", "Changes were saved", "success");
+                showToast("Changes were saved", true)
+            }
+        } else {
+            console.error('Error performing operation');
+        }
+    })
+    .catch(error => console.error('Error:', error))
+    .finally(() => {
+        messageElement.innerText = '';
+    });
+}
+</script>
+
+{% endblock %}
