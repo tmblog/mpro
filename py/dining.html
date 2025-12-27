@@ -1,258 +1,306 @@
 {% extends "base.html" %}
 
-{% block title %}Dining{% endblock %}
+{% block title %}Dining Settings{% endblock %}
 
 {% block content %}
-
-<div class="row mt-2">
-    <div class="col-md-12">
-        <div class="card flex-fill w-100" style="height: 95vh;">
-            <div class="card-header">
-                <h5 class="card-title mb-0">{{ back_link|safe}} Restaurant Settings</h5>
-            </div>
-            <div class="card-body row pb-3 h-100">
-                
-                <!-- Left Column - Rooms & Tables Management -->
-                <div class="col-md-4 border-end overflow-auto pe-3" style="height: 100%;">
-                    
-                    <!-- Rooms Section -->
-                    <div class="mb-4">
-                        <h6 class="fw-bold mb-2">
-                            <i class="bi bi-building"></i> Rooms / Areas
-                            <button class="btn btn-sm btn-outline-primary float-end" onclick="showAddRoomModal()">
-                                <i class="bi bi-plus-lg"></i> Add Room
-                            </button>
+<div class="dining-container mt-2">
+    <!-- Header -->
+    <div class="dining-header">
+        <h5>{{ back_link|safe }} Restaurant Settings</h5>
+    </div>
+    
+    <!-- Tabs -->
+    <ul class="nav nav-tabs dining-tabs" role="tablist">
+        <li class="nav-item">
+            <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tablesTab" type="button">
+                <i class="bi bi-grid-3x3-gap-fill"></i> Rooms & Tables
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#orderingTab" type="button">
+                <i class="bi bi-bag-check"></i> Ordering Methods
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#settingsTab" type="button">
+                <i class="bi bi-gear"></i> System Settings
+            </button>
+        </li>
+        <li class="nav-item">
+            <a href="{{ url_for('pos.admin_guest_tracking') }}" class="nav-link">
+                <i class="bi bi-people-fill"></i> Guest Tracking
+            </a>
+        </li>
+    </ul>
+    
+    <!-- Tab Content -->
+    <div class="tab-content tab-content-wrapper">
+        
+        <!-- ROOMS & TABLES TAB -->
+        <div class="tab-pane fade show active" id="tablesTab">
+            <div class="split-section">
+                <!-- Left: Room Management -->
+                <div class="split-left">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="mb-0 fw-bold">
+                            <i class="bi bi-building text-primary"></i> Rooms / Areas
                         </h6>
-                        <div id="roomsContainer" class="list-group list-group-flush mb-3" style="max-height: 200px; overflow-y: auto;">
-                            {% if rooms %}
-                                {% for room in rooms %}
-                                <div class="list-group-item d-flex justify-content-between align-items-center py-2 room-item" 
-                                    data-room-id="{{ room.room_id }}">
-                                    <span class="room-handle me-2" style="cursor: grab;">
-                                        <i class="bi bi-grip-vertical text-muted"></i>
-                                    </span>
-                                    <span class="flex-grow-1">{{ room.room_label }}</span>
-                                    <div class="btn-group btn-group-sm">
-                                        <button class="btn btn-outline-secondary" onclick="showEditRoomModal({{ room.room_id }}, '{{ room.room_label }}')">
-                                            <i class="bi bi-pencil"></i>
-                                        </button>
-                                        <button class="btn btn-outline-danger" onclick="deleteRoom({{ room.room_id }}, '{{ room.room_label }}')">
-                                            <i class="bi bi-trash"></i>
-                                        </button>
-                                    </div>
-                                </div>
-                                {% endfor %}
-                            {% else %}
-                                <div class="text-muted small py-2" id="noRoomsMsg">No rooms created yet.</div>
-                            {% endif %}
-                        </div>
+                        <button class="btn btn-primary btn-sm" onclick="showAddRoomModal()">
+                            <i class="bi bi-plus-lg"></i> Add Room
+                        </button>
                     </div>
                     
-                    <hr>
-                    
-                    <!-- Tables Section -->
-                    <div>
-                        <h6 class="fw-bold mb-2"><i class="bi bi-grid-3x3"></i> Tables</h6>
-                        <div class="input-group mb-3">
-                            <select id="tableRoom" class="form-select" style="max-width: 40%;" {% if not rooms %}disabled{% endif %}>
-                                <option value="">Select Room</option>
-                                {% for room in rooms %}
-                                    <option value="{{ room.room_id }}">{{ room.room_label }}</option>
-                                {% endfor %}
-                            </select>
-                            <input type="text" id="tableNumber" class="form-control" placeholder="Table #" 
-                                   {% if not rooms %}disabled{% endif %}>
-                            <button type="button" id="saveTableBtn" class="btn btn-primary" onclick="saveTable()"
-                                    {% if not rooms %}disabled{% endif %}>
-                                <i class="bi bi-plus-lg"></i> Add
-                            </button>
-                        </div>
-                        {% if not rooms %}
-                            <div class="alert alert-info py-2">
-                                <small><i class="bi bi-info-circle"></i> Create a room first before adding tables.</small>
+                    <div id="roomsContainer">
+                        {% if rooms %}
+                            {% for room in rooms %}
+                            <div class="room-card room-item" data-room-id="{{ room.room_id }}">
+                                <span class="room-handle">
+                                    <i class="bi bi-grip-vertical"></i>
+                                </span>
+                                <span class="room-name">{{ room.room_label }}</span>
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-outline-secondary btn-sm" 
+                                            onclick="showEditRoomModal({{ room.room_id }}, '{{ room.room_label }}')">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <button class="btn btn-outline-danger btn-sm" 
+                                            onclick="deleteRoom({{ room.room_id }}, '{{ room.room_label }}')">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <div class="empty-state" id="noRoomsMsg">
+                                <i class="bi bi-building"></i>
+                                <p class="mb-0">No rooms created yet</p>
                             </div>
                         {% endif %}
-                        
-                        <div id="dataContainer">
-                            {% if tables_by_room %}
-                                {% for room_label, room_tables in tables_by_room.items() %}
-                                    <div class="mb-3" id="room-section-{{ room_tables[0].room_id if room_tables else '' }}">
-                                        <h6 class="text-muted border-bottom pb-1">
-                                            {% if room_label %}{{ room_label }}{% else %}Unassigned{% endif %}
-                                        </h6>
-                                        <div class="row row-cols-3 gx-1" id="room-tables-{{ room_tables[0].room_id if room_tables else '' }}">
-                                            {% for table in room_tables %}
-                                                <div class="col mb-1" id="table-col-{{ table.table_id }}">
-                                                    <div class="card {% if table.table_occupied %}border-danger{% else %}border-success{% endif %} h-100">
-                                                        <div class="card-body p-2 text-center">
-                                                            <h6 class="card-title mb-1">#{{ table.table_number }}</h6>
-                                                            {% if table.table_occupied %}
-                                                                <span class="badge bg-danger mb-1">In Use</span>
-                                                            {% endif %}
-                                                            <button class="btn btn-sm btn-outline-danger w-100" 
-                                                                    onclick="deleteTable('{{ table.table_id }}', '{{ table.table_number }}')"
-                                                                    {% if table.table_occupied %}disabled{% endif %}>
-                                                                <i class="bi bi-trash"></i>
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            {% endfor %}
-                                        </div>
-                                    </div>
-                                {% endfor %}
-                            {% else %}
-                                <div class="text-muted text-center py-3" id="noTablesMsg">
-                                    No tables created yet.
-                                </div>
-                            {% endif %}
-                        </div>
                     </div>
                 </div>
-
-                <!-- Middle Column - Ordering Methods -->
-                <div class="col-md-4 border-end overflow-auto pe-3" style="height: 100%;">
-                    <h6 class="fw-bold mb-3">Ordering Methods</h6>
-                    <div class="list-group">
-                        {% for item in pos_methods %}
-                        <div class="list-group-item">
-                            
-                            <!-- Enabled / Disabled -->
-                            <div class="row mb-2 align-items-center">
-                                <div class="col-5">
-                                    <span class="fw-bold text-capitalize">{{ item.method }}</span>
-                                </div>
-                                <div class="col-7">
-                                    <div class="btn-group btn-group-sm w-100" role="group">
-                                        <input type="radio" class="btn-check on-off" name="{{ item.method }}" 
-                                            id="{{ item.method }}" data-method="{{ item.method }}" value="on"
-                                            {% if item.on == 1 %}checked{% endif %}>
-                                        <label class="btn btn-outline-success flex-fill" for="{{ item.method }}">Enabled</label>
-
-                                        <input type="radio" class="btn-check on-off" name="{{ item.method }}" 
-                                            id="disabled-{{ item.method }}" data-method="{{ item.method }}" value="off"
-                                            {% if item.on == 0 %}checked{% endif %}>
-                                        <label class="btn btn-outline-danger flex-fill" for="disabled-{{ item.method }}">Disabled</label>
-                                    </div>
-                                </div>
+                
+                <!-- Right: Tables -->
+                <div class="split-right">
+                    <!-- Add Table Form -->
+                    <div class="add-table-form">
+                        <h6><i class="bi bi-plus-circle"></i> Add New Table</h6>
+                        <div class="row g-2 align-items-end">
+                            <div class="col-md-5">
+                                <label class="form-label small text-muted mb-1">Room</label>
+                                <select id="tableRoom" class="form-select" {% if not rooms %}disabled{% endif %}>
+                                    <option value="">Select Room...</option>
+                                    {% for room in rooms %}
+                                        <option value="{{ room.room_id }}">{{ room.room_label }}</option>
+                                    {% endfor %}
+                                </select>
                             </div>
-
-                            <!-- Menu Display -->
-                            <div class="row align-items-center mb-2">
-                                <div class="col-5">
-                                    <small class="text-muted">Menu Display</small>
-                                </div>
-                                <div class="col-7">
-                                    <div class="btn-group btn-group-sm w-100" role="group">
-                                        <input type="radio" class="btn-check menu-option" name="in-{{ item.method }}" 
-                                            id="in-{{ item.method }}" data-method="{{ item.method }}" 
-                                            data-property="menu" data-value="0"
-                                            {% if item.menu == 0 %}checked{% endif %}>
-                                        <label class="btn btn-outline-primary flex-fill" for="in-{{ item.method }}">In Menu</label>
-
-                                        <input type="radio" class="btn-check menu-option" name="in-{{ item.method }}" 
-                                            id="out-{{ item.method }}" data-method="{{ item.method }}" 
-                                            data-property="menu" data-value="1"
-                                            {% if item.menu == 1 %}checked{% endif %}>
-                                        <label class="btn btn-outline-secondary flex-fill" for="out-{{ item.method }}">Out Menu</label>
-                                    </div>
-                                </div>
+                            <div class="col-md-4">
+                                <label class="form-label small text-muted mb-1">Table Number</label>
+                                <input type="text" id="tableNumber" class="form-control" 
+                                       placeholder="e.g. 1, 2, A1..." {% if not rooms %}disabled{% endif %}>
                             </div>
-
-                            <!-- Total Division Hint (Only for 'dine') -->
-                            {% if item.method == 'dine' %}
-                            <div class="row align-items-center">
-                                <div class="col-5">
-                                    <small class="text-muted">Total Division Hint</small>
-                                </div>
-                                <div class="col-7">
-                                    <div class="btn-group btn-group-sm w-100" role="group">
-                                        <input type="radio" class="btn-check" name="divisionHint" 
-                                            id="divisionHint1"
-                                            {% if division_hint %}checked{% endif %}>
-                                        <label class="btn btn-outline-secondary flex-fill" for="divisionHint1">On</label>
-
-                                        <input type="radio" class="btn-check" name="divisionHint" 
-                                            id="divisionHint2"
-                                            {% if not division_hint %}checked{% endif %}>
-                                        <label class="btn btn-outline-dark flex-fill" for="divisionHint2">Off</label>
-                                    </div>
-                                </div>
+                            <div class="col-md-3">
+                                <button type="button" id="saveTableBtn" class="btn btn-primary w-100" 
+                                        onclick="saveTable()" {% if not rooms %}disabled{% endif %}>
+                                    <i class="bi bi-plus-lg"></i> Add Table
+                                </button>
                             </div>
-                            {% endif %}
-
                         </div>
-                        {% endfor %}
+                        {% if not rooms %}
+                        <div class="alert alert-info mt-3 mb-0 py-2">
+                            <small><i class="bi bi-info-circle"></i> Create a room first before adding tables.</small>
+                        </div>
+                        {% endif %}
                     </div>
-                </div>
-
-                <!-- Right Column - System Settings -->
-                <div class="col-md-4 overflow-auto" style="height: 100%;">
-                    <h6 class="fw-bold mb-3">System Settings</h6>
                     
-                    <!-- Charges Section -->
-                    <div class="card mb-1">
-                        <div class="card-header bg-light">
-                            <h6 class="my-0">Charges & Taxes</h6>
+                    <!-- Tables by Room -->
+                    <div id="dataContainer">
+                        {% if tables_by_room %}
+                            {% for room_label, room_tables in tables_by_room.items() %}
+                            <div class="room-section" id="room-section-{{ room_tables[0].room_id if room_tables else '' }}">
+                                <div class="room-section-header">
+                                    <h6>{% if room_label %}{{ room_label }}{% else %}Unassigned{% endif %}</h6>
+                                    <span class="badge bg-secondary">{{ room_tables|length }} tables</span>
+                                </div>
+                                <div class="table-grid" id="room-tables-{{ room_tables[0].room_id if room_tables else '' }}">
+                                    {% for table in room_tables %}
+                                    <div class="table-card {% if table.table_occupied %}occupied{% endif %}" 
+                                         id="table-col-{{ table.table_id }}">
+                                        <button class="btn btn-link btn-sm text-danger table-delete p-0" 
+                                                onclick="deleteTable('{{ table.table_id }}', '{{ table.table_number }}')"
+                                                {% if table.table_occupied %}disabled{% endif %}>
+                                            <i class="bi bi-x-circle-fill"></i>
+                                        </button>
+                                        <div class="table-number">#{{ table.table_number }}</div>
+                                        {% if table.table_occupied %}
+                                            <span class="table-status in-use">In Use</span>
+                                        {% else %}
+                                            <span class="table-status available">Available</span>
+                                        {% endif %}
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <div class="empty-state" id="noTablesMsg">
+                                <i class="bi bi-grid-3x3"></i>
+                                <p class="mb-0">No tables created yet</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- ORDERING METHODS TAB -->
+        <div class="tab-pane fade" id="orderingTab">
+            <div class="row">
+                {% for item in pos_methods %}
+                <div class="col-lg-4 col-md-6">
+                    <div class="method-card">
+                        <div class="method-header">
+                            <span class="method-name">
+                                {% if item.method == 'dine' %}
+                                    <i class="bi bi-cup-hot text-warning"></i>
+                                {% elif item.method == 'takeaway' %}
+                                    <i class="bi bi-bag text-success"></i>
+                                {% elif item.method == 'delivery' %}
+                                    <i class="bi bi-bicycle text-info"></i>
+                                {% else %}
+                                    <i class="bi bi-cart text-secondary"></i>
+                                {% endif %}
+                                {{ item.method }}
+                            </span>
+                            <div class="method-toggle btn-group btn-group-sm">
+                                <input type="radio" class="btn-check on-off" name="{{ item.method }}" 
+                                       id="{{ item.method }}" data-method="{{ item.method }}" value="on"
+                                       {% if item.on == 1 %}checked{% endif %}>
+                                <label class="btn btn-outline-success" for="{{ item.method }}">On</label>
+                                
+                                <input type="radio" class="btn-check on-off" name="{{ item.method }}" 
+                                       id="disabled-{{ item.method }}" data-method="{{ item.method }}" value="off"
+                                       {% if item.on == 0 %}checked{% endif %}>
+                                <label class="btn btn-outline-danger" for="disabled-{{ item.method }}">Off</label>
+                            </div>
                         </div>
-                        <div class="card-body">
-                            <div class="mb-3">
-                                <label class="form-label">Service Charge (%)</label>
-                                <div class="input-group">
+                        
+                        <div class="method-options">
+                            <div class="method-option-row">
+                                <span class="method-option-label">Menu Display</span>
+                                <div class="btn-group btn-group-sm">
+                                    <input type="radio" class="btn-check menu-option" name="in-{{ item.method }}" 
+                                           id="in-{{ item.method }}" data-method="{{ item.method }}" 
+                                           data-property="menu" data-value="0"
+                                           {% if item.menu == 0 %}checked{% endif %}>
+                                    <label class="btn btn-outline-primary" for="in-{{ item.method }}">In Menu</label>
+                                    
+                                    <input type="radio" class="btn-check menu-option" name="in-{{ item.method }}" 
+                                           id="out-{{ item.method }}" data-method="{{ item.method }}" 
+                                           data-property="menu" data-value="1"
+                                           {% if item.menu == 1 %}checked{% endif %}>
+                                    <label class="btn btn-outline-secondary" for="out-{{ item.method }}">Out Menu</label>
+                                </div>
+                            </div>
+                            
+                            {% if item.method == 'dine' %}
+                            <div class="method-option-row">
+                                <span class="method-option-label">Total Division Hint</span>
+                                <div class="btn-group btn-group-sm">
+                                    <input type="radio" class="btn-check" name="divisionHint" 
+                                           id="divisionHint1" {% if division_hint %}checked{% endif %}>
+                                    <label class="btn btn-outline-secondary" for="divisionHint1">On</label>
+                                    
+                                    <input type="radio" class="btn-check" name="divisionHint" 
+                                           id="divisionHint2" {% if not division_hint %}checked{% endif %}>
+                                    <label class="btn btn-outline-dark" for="divisionHint2">Off</label>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        
+        <!-- SYSTEM SETTINGS TAB -->
+        <div class="tab-pane fade" id="settingsTab">
+            <div class="row">
+                <div class="col-lg-6">
+                    <div class="settings-card">
+                        <div class="settings-card-header">
+                            <h6><i class="bi bi-cash-coin"></i> Charges & Taxes</h6>
+                        </div>
+                        <div class="settings-card-body">
+                            <div class="setting-row">
+                                <div class="setting-info">
+                                    <h6>Service Charge</h6>
+                                    <small>Applies only to dine-in orders</small>
+                                </div>
+                                <div class="input-group" style="width: 180px;">
                                     <input type="number" class="form-control" id="serviceChargeInput" 
                                            value="{{ service_charge }}" onchange="setTwoNumberDecimal(event)" 
                                            min="0" max="100" step="0.5">
+                                    <span class="input-group-text">%</span>
                                     <button class="btn btn-primary" type="button" onclick="saveServiceCharge()">
-                                        Save
+                                        <i class="bi bi-check-lg"></i>
                                     </button>
                                 </div>
-                                <small class="text-muted">Applies only to dine-in orders</small>
                             </div>
                             
-                            <div class="mb-1">
-                                <label class="form-label">VAT Rate (%)</label>
-                                <div class="input-group">
+                            <div class="setting-row">
+                                <div class="setting-info">
+                                    <h6>VAT Rate</h6>
+                                    <small>Applied to all orders</small>
+                                </div>
+                                <div class="input-group" style="width: 180px;">
                                     <input type="number" class="form-control" id="vatInput" 
                                            value="{{ vat_rate }}" onchange="setTwoNumberDecimal(event)" 
                                            min="0" max="100" step="0.5">
+                                    <span class="input-group-text">%</span>
                                     <button class="btn btn-primary" type="button" onclick="saveVat()">
-                                        Save
+                                        <i class="bi bi-check-lg"></i>
                                     </button>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    
-                    <!-- Interface Settings -->
-                    <div class="card">
-                        <div class="card-header bg-light">
-                            <h6 class="my-0">Interface Options</h6>
+                </div>
+                
+                <div class="col-lg-6">
+                    <div class="settings-card">
+                        <div class="settings-card-header">
+                            <h6><i class="bi bi-sliders"></i> Interface Options</h6>
                         </div>
-                        <div class="card-body">
-                            <div class="mb-3">
-                                <label class="form-label">Quick Cart Feature</label>
-                                <div class="btn-group w-100" role="group">
+                        <div class="settings-card-body">
+                            <div class="setting-row">
+                                <div class="setting-info">
+                                    <h6>Quick Cart Feature</h6>
+                                    <small>Create takeaway cart by pressing "New"</small>
+                                </div>
+                                <div class="btn-group" role="group">
                                     <input type="radio" class="btn-check" name="quickCartradio" 
-                                           id="quickCart1" autocomplete="off" {% if quick_cart %}checked{% endif %}>
+                                           id="quickCart1" {% if quick_cart %}checked{% endif %}>
                                     <label class="btn btn-outline-success" for="quickCart1">Enabled</label>
                                     
                                     <input type="radio" class="btn-check" name="quickCartradio" 
-                                           id="quickCart2" autocomplete="off" {% if not quick_cart %}checked{% endif %}>
+                                           id="quickCart2" {% if not quick_cart %}checked{% endif %}>
                                     <label class="btn btn-outline-danger" for="quickCart2">Disabled</label>
                                 </div>
-                                <small class="text-muted">Create a takeaway cart just by pressing new</small>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
+        
     </div>
 </div>
 
 <!-- Room Modal -->
 <div class="modal fade" id="roomModal" tabindex="-1">
-    <div class="modal-dialog modal-sm">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title" id="roomModalTitle">Add Room</h5>
@@ -281,15 +329,13 @@
 <script src="{{ url_for('static', filename='js/sortable.min.js') }}"></script>
 <script src="{{ url_for('static', filename='js/pos.helpers.js') }}"></script>
 <script>
-// Room modal instance
 let roomModal;
 
 document.addEventListener('DOMContentLoaded', () => {
     roomModal = new bootstrap.Modal(document.getElementById('roomModal'));
     
     // Ordering method toggles
-    const onOffButtons = document.querySelectorAll('.on-off');
-    onOffButtons.forEach(button => {
+    document.querySelectorAll('.on-off').forEach(button => {
         button.addEventListener('click', function() {
             const method = this.dataset.method;
             const value = this.value === 'on' ? 1 : 0;
@@ -300,18 +346,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({ method, value }),
             })
             .then(response => response.json())
-            .then(data => {
-                showToast(method + " updated.", true);
-            })
-            .catch(error => {
-                showToast('Error updating: ' + error.message, false);
-            });
+            .then(data => showToast(method + " updated.", true))
+            .catch(error => showToast('Error updating: ' + error.message, false));
         });
     });
 
     // Menu option toggles
-    const menuOptions = document.querySelectorAll('.menu-option');
-    menuOptions.forEach(option => {
+    document.querySelectorAll('.menu-option').forEach(option => {
         option.addEventListener('click', function() {
             const method = this.dataset.method;
             const property = this.dataset.property;
@@ -323,18 +364,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({ method, property, value }),
             })
             .then(response => response.json())
-            .then(data => {
-                showToast(method + " menu updated.", true);
-            })
-            .catch(error => {
-                showToast('Error updating: ' + error.message, false);
-            });
+            .then(data => showToast(method + " menu updated.", true))
+            .catch(error => showToast('Error updating: ' + error.message, false));
         });
     });
     
     // Quick cart toggle
     document.querySelectorAll('input[name="quickCartradio"]').forEach(radio => {
-        radio.addEventListener('change', function () {
+        radio.addEventListener('change', function() {
             const quickCartEnabled = document.getElementById('quickCart1').checked;
 
             fetch('/update_quick_cart', {
@@ -343,15 +380,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({ quick_cart: quickCartEnabled })
             })
             .then(res => res.json())
-            .then(data => {
-                showToast(data.success ? "Quick Cart setting updated" : "Failed to update setting", data.success);
-            });
+            .then(data => showToast(data.success ? "Quick Cart updated" : "Failed to update", data.success));
         });
     });
 
     // Division hint toggle
     document.querySelectorAll('input[name="divisionHint"]').forEach(radio => {
-        radio.addEventListener('change', function () {
+        radio.addEventListener('change', function() {
             const divisionHintEnabled = document.getElementById('divisionHint1').checked;
 
             fetch('/update_division_hint', {
@@ -360,11 +395,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({ division_hint: divisionHintEnabled })
             })
             .then(res => res.json())
-            .then(data => {
-                showToast(data.success ? "Division hint updated" : "Failed to update", data.success);
-            });
+            .then(data => showToast(data.success ? "Division hint updated" : "Failed to update", data.success));
         });
     });
+    
+    // Room sortable
+    const container = document.getElementById('roomsContainer');
+    if (container && container.querySelector('.room-card')) {
+        new Sortable(container, {
+            animation: 150,
+            handle: '.room-handle',
+            ghostClass: 'bg-light',
+            onEnd: saveRoomOrder
+        });
+    }
 });
 
 // ============================================
@@ -378,7 +422,7 @@ function showAddRoomModal() {
     roomModal.show();
 }
 
-function editRoom(roomId, roomLabel) {
+function showEditRoomModal(roomId, roomLabel) {
     document.getElementById('roomModalTitle').textContent = 'Edit Room';
     document.getElementById('editRoomId').value = roomId;
     document.getElementById('roomLabelInput').value = roomLabel;
@@ -411,7 +455,6 @@ function saveRoom() {
         } else {
             showToast('Room saved successfully', true);
             roomModal.hide();
-            // Reload page to refresh both rooms and table dropdowns
             location.reload();
         }
     })
@@ -449,8 +492,33 @@ function deleteRoom(roomId, roomLabel) {
             })
             .catch(err => {
                 showToast('Error deleting room', false);
-                console.error(err);
             });
+        }
+    });
+}
+
+function saveRoomOrder() {
+    const roomItems = document.querySelectorAll('.room-item');
+    const roomOrders = [];
+    
+    roomItems.forEach((item, index) => {
+        roomOrders.push({
+            room_id: parseInt(item.dataset.roomId),
+            room_order: index
+        });
+    });
+    
+    fetch('/update_room_order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rooms: roomOrders })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.error) {
+            showToast(data.error, false);
+        } else {
+            showToast('Room order saved', true);
         }
     });
 }
@@ -481,33 +549,34 @@ function deleteTable(id, tableNumber) {
                 if (data.error) {
                     showToast(data.error, false);
                 } else {
-                    // Remove from DOM
-                    const tableCol = document.getElementById(`table-col-${id}`);
-                    if (tableCol) {
-                        const roomTables = tableCol.parentElement;
-                        tableCol.remove();
+                    const tableCard = document.getElementById(`table-col-${id}`);
+                    if (tableCard) {
+                        const grid = tableCard.parentElement;
+                        tableCard.remove();
                         
-                        // If room section is now empty, remove it
-                        if (roomTables && roomTables.children.length === 0) {
-                            roomTables.closest('.mb-3').remove();
+                        // Update badge count
+                        const section = grid.closest('.room-section');
+                        if (section) {
+                            const badge = section.querySelector('.badge');
+                            const remaining = grid.children.length;
+                            if (badge) badge.textContent = `${remaining} tables`;
+                            
+                            if (remaining === 0) section.remove();
                         }
                         
-                        // If no tables left at all, show "no tables" message
+                        // Show empty state if no tables
                         const container = document.getElementById('dataContainer');
-                        if (container && container.children.length === 0) {
+                        if (container && !container.querySelector('.table-card')) {
                             container.innerHTML = `
-                                <div class="text-muted text-center py-3" id="noTablesMsg">
-                                    No tables created yet.
+                                <div class="empty-state" id="noTablesMsg">
+                                    <i class="bi bi-grid-3x3"></i>
+                                    <p class="mb-0">No tables created yet</p>
                                 </div>
                             `;
                         }
                     }
                     showToast("Table deleted!", true);
                 }
-            })
-            .catch(error => {
-                console.error('Error deleting table:', error);
-                showToast('Error deleting table', false);
             });
         }
     });
@@ -536,10 +605,7 @@ function saveTable() {
     fetch('/add_new_table', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            tableNumber: tableNumber,
-            roomId: parseInt(roomId)
-        }),
+        body: JSON.stringify({ tableNumber, roomId: parseInt(roomId) }),
     })
     .then(response => response.json())
     .then(data => {
@@ -547,67 +613,55 @@ function saveTable() {
             showToast(data.error, false);
         } else {
             showToast("Table saved!", true);
-            
-            // Add table to DOM immediately
             appendTableToDOM(data.table_id, tableNumber, roomLabel, roomId);
             
-            // Increment table number for next entry
             const currentNum = parseInt(tableNumber);
-            if (!isNaN(currentNum)) {
-                tableNumberInput.value = currentNum + 1;
-            } else {
-                tableNumberInput.value = '';
-            }
-            
+            tableNumberInput.value = !isNaN(currentNum) ? currentNum + 1 : '';
             tableNumberInput.focus();
         }
-    })
-    .catch(error => {
-        console.error('Error saving table:', error);
-        showToast('Error saving table', false);
     });
 }
 
 function appendTableToDOM(tableId, tableNumber, roomLabel, roomId) {
     const container = document.getElementById('dataContainer');
     
-    // Remove "no tables" message if present
+    // Remove empty state
     const noTablesMsg = document.getElementById('noTablesMsg');
     if (noTablesMsg) noTablesMsg.remove();
     
-    // Find or create room section
     let roomSection = document.getElementById(`room-section-${roomId}`);
-    let tablesRow;
     
     if (!roomSection) {
-        // Create new room section
         roomSection = document.createElement('div');
-        roomSection.className = 'mb-3';
+        roomSection.className = 'room-section';
         roomSection.id = `room-section-${roomId}`;
         roomSection.innerHTML = `
-            <h6 class="text-muted border-bottom pb-1">${roomLabel}</h6>
-            <div class="row row-cols-3 gx-1" id="room-tables-${roomId}"></div>
+            <div class="room-section-header">
+                <h6>${roomLabel}</h6>
+                <span class="badge bg-secondary">0 tables</span>
+            </div>
+            <div class="table-grid" id="room-tables-${roomId}"></div>
         `;
         container.appendChild(roomSection);
     }
     
-    // Add table card to room
-    tablesRow = document.getElementById(`room-tables-${roomId}`);
-    const tableCol = document.createElement('div');
-    tableCol.className = 'col mb-1';
-    tableCol.id = `table-col-${tableId}`;
-    tableCol.innerHTML = `
-        <div class="card border-success h-100">
-            <div class="card-body p-2 text-center">
-                <h6 class="card-title mb-1">#${tableNumber}</h6>
-                <button class="btn btn-sm btn-outline-danger w-100" 
-                        onclick="deleteTable('${tableId}', '${tableNumber}')">
-                    <i class="bi bi-trash"></i>
-                </button>
-            </div>
-        </div>
+    const tablesGrid = document.getElementById(`room-tables-${roomId}`);
+    const tableCard = document.createElement('div');
+    tableCard.className = 'table-card';
+    tableCard.id = `table-col-${tableId}`;
+    tableCard.innerHTML = `
+        <button class="btn btn-link btn-sm text-danger table-delete p-0" 
+                onclick="deleteTable('${tableId}', '${tableNumber}')">
+            <i class="bi bi-x-circle-fill"></i>
+        </button>
+        <div class="table-number">#${tableNumber}</div>
+        <span class="table-status available">Available</span>
     `;
-    tablesRow.appendChild(tableCol);
+    tablesGrid.appendChild(tableCard);
+    
+    // Update badge
+    const badge = roomSection.querySelector('.badge');
+    if (badge) badge.textContent = `${tablesGrid.children.length} tables`;
 }
 
 // ============================================
@@ -619,81 +673,32 @@ function setTwoNumberDecimal(event) {
 }
 
 function saveServiceCharge() {
-    const serviceChargeInput = document.getElementById('serviceChargeInput');
-    const serviceChargeValue = serviceChargeInput.value.trim() === '' ? 0 : parseFloat(serviceChargeInput.value);
+    const value = document.getElementById('serviceChargeInput').value.trim();
+    const serviceCharge = value === '' ? 0 : parseFloat(value);
 
     fetch('/update_service_charge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ serviceCharge: serviceChargeValue })
+        body: JSON.stringify({ serviceCharge })
     })
     .then(response => response.json())
-    .then(data => {
-        showToast("Service charge updated!", true);
-    })
-    .catch(error => {
-        showToast("Failed to update service charge.", false);
-    });
+    .then(() => showToast("Service charge updated!", true))
+    .catch(() => showToast("Failed to update service charge.", false));
 }
 
 function saveVat() {
-    const vatInput = document.getElementById('vatInput');
-    const vatValue = vatInput.value.trim() === '' ? 0 : parseFloat(vatInput.value);
+    const value = document.getElementById('vatInput').value.trim();
+    const vat = value === '' ? 0 : parseFloat(value);
 
     fetch('/update_vat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vat: vatValue })
+        body: JSON.stringify({ vat })
     })
     .then(response => response.json())
-    .then(data => {
-        showToast("VAT updated.", true);
-    })
-    .catch(error => {
-        showToast("Failed to update VAT.", false);
-    });
+    .then(() => showToast("VAT updated.", true))
+    .catch(() => showToast("Failed to update VAT.", false));
 }
-
-document.addEventListener('DOMContentLoaded', function() {
-    const container = document.getElementById('roomsContainer');
-    if (container) {
-        new Sortable(container, {
-            animation: 150,
-            handle: '.room-handle',
-            ghostClass: 'bg-light',
-            onEnd: saveRoomOrder
-        });
-    }
-});
-
-function saveRoomOrder() {
-    const roomItems = document.querySelectorAll('.room-item');
-    const roomOrders = [];
-    
-    roomItems.forEach((item, index) => {
-        roomOrders.push({
-            room_id: parseInt(item.dataset.roomId),
-            room_order: index
-        });
-    });
-    
-    fetch('/update_room_order', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rooms: roomOrders })
-    })
-    .then(res => res.json())
-    .then(data => {
-        if (data.error) {
-            showToast(data.error, false);
-        } else {
-            showToast('Room order saved', true);
-        }
-    })
-    .catch(err => {
-        showToast('Error saving room order', false);
-    });
-}
-</script>  
+</script>
 
 {% endblock %}
