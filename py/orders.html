@@ -1,0 +1,282 @@
+{% extends "base.html" %}
+
+{% block title %}Live Orders{% endblock %}
+
+{% block content %}
+
+<div class="row p-1" style="height: 100vh; overflow: hidden;">
+
+  <div class="col-md-6 border rounded-0 overflow-auto bg-dark" style="height: 100%;">
+    
+    <audio id="autoplayAudio" preload="auto">
+        <source src="{{ url_for('static', filename='sound/spn.mp3') }}" type="audio/mpeg">
+        Your browser does not support the audio element.
+    </audio>
+    <audio id="autoplayCancel" preload="auto">
+        <source src="{{ url_for('static', filename='sound/cancel.mp3') }}" type="audio/mpeg">
+        Your browser does not support the audio element.
+    </audio>
+        <span class="list-group-item list-group-item-action flex-column align-items-start mb-1 text-light" id="waiting_for_orders" style="display: none;">
+            <div class="d-flex w-100 justify-content-between">
+                <h4 class="mb-0 mt-3">Waiting for orders</h4>
+                <div class="spinner-grow text-success mt-3" role="status"></div>
+            </div>
+            <p class="mb-0">Screen will update automatically when a new order arrives</p>
+        </span>
+        <div id="dataContainer">
+            <div class="d-flex justify-content-center mt-5" id="loadingIcon" style="display: none;">
+                <div class="spinner-border text-info" role="status" style="width: 5rem; height: 5rem;">
+                  <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+        </div>
+
+  </div>
+  <div class="col-md-6 rounded-0 overflow-auto" id="order_view" style="height:100%;">
+					
+  </div>
+</div>
+
+<!-- Progress Modal -->
+<div class="modal fade" id="progressOrderModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="progressOrderLabel">Update order</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-grid gap-2">
+                    <button class="btn btn-success border-0 btn-lg" type="button" onclick="completeOrderFromModal()">On its way</button>
+                </div>
+                <hr>
+                <p class="lead mt-3 text-center fw-bold">Or update new delivery/collection time</p>
+                <div class="form-floating">
+                    <select class="form-select" id="timeDropdown">
+                    </select>
+                    <label for="floatingSelect">Choose a new time</label>
+                </div>
+                <input type="hidden" id="orderIdInput">
+                <input type="hidden" id="orderUrlInput">
+                <div class="d-grid gap-2 mt-3">
+                    <button class="btn btn-danger border-0 btn-lg" type="button" onclick="acceptOrderFromModal()">Save new time</button>
+                </div>
+                <hr>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-primary border-0 btn-lg" type="button" data-bs-dismiss="modal">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block off_canvas %}{% endblock %}
+{% block footer %}
+<script>
+// disable accept button onclick to prevent multiple presses and emails
+    const dataContainer = document.getElementById('dataContainer');
+    let previousDataJSON = '';
+    let shouldPoll = true;
+
+function createOrderHtml(order) {
+    const newTime = moment(order.order_for_time).format('h:mm');
+    var encodedUrl = encodeURIComponent(order.url);
+    const button = generateButton(order.order_status, order.order_id, newTime, encodedUrl);
+    const order_delivery = order.delivery_collection;
+    const deliveryWord = order_delivery.match(/Delivery|Collection/i) ? order_delivery.match(/Delivery|Collection/i)[0] : order.delivery_collection;
+    
+    const deliveryClass = deliveryWord === 'Collection' ? 'bg-primary' : 'bg-info';
+    const orderJsonString = JSON.stringify(order);
+    const encodedOrderJson = encodeURIComponent(orderJsonString);
+
+    const stuart_id = order?.stuart_job_id;
+    const stuart_status = order?.stuart_status
+    ? order.stuart_status.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase())
+    : '';
+    const stuart_update_time = order?.stuart_update_time;
+    const stuart_tracking = order?.stuart_tracking;
+
+    let stuartHtml = '';
+
+    if (stuart_id) {
+        let stuartBadgeClass = "";
+        const statuses = {
+            "pending": "bg-info",
+            "package_created": "bg-info",
+            "courier_assigned": "bg-primary",
+            "courier_waiting": "bg-primary",
+            "waiting": "bg-primary",
+            "courier_arriving": "bg-secondary",
+            "package_delivering": "bg-warning",
+            "package_delivered": "bg-success",
+            "package_canceled": "bg-danger"
+        };
+
+        if (order.stuart_status in statuses) {
+            stuartBadgeClass = statuses[order.stuart_status];
+        }
+
+        let acknowledgeButton = "";
+        if (order.stuart_status === 'package_canceled' && order.stuart_cancel_seen == 0) {
+            acknowledgeButton = `<button class="btn btn-primary attention-box-shadow" onclick="acknowledgeCancel(${order.order_id},'${encodedUrl}');">Acknowledge</button>`;
+            playCancelAudio();
+        }
+        else if (order.stuart_status == 'package_canceled' && order.stuart_cancel_seen) {
+            acknowledgeButton = `<small class="fs-6 badge bg-success p-2" >${order.stuart_cancel_reason}</small>`;
+        }
+
+        stuartHtml = `
+            <div class="d-flex w-100 justify-content-between mt-2">
+                <small class="fs-6 badge ${stuartBadgeClass} p-2">Delivery: ${stuart_status}</small> ${acknowledgeButton}
+                <small class="fs-6 badge bg-info p-2">Updated @: ${moment(stuart_update_time).format('h:mm')}</small>
+            </div>`;
+    }
+    
+    return `
+        <span class="bg-light list-group-item list-group-item-action flex-column align-items-start my-2 p-3 border border-primary" id="orderItem_${order.order_id}" onclick="showOrder(${order.order_id}, '${encodedOrderJson}')" style="cursor:pointer;">
+            <div class="d-flex w-100 justify-content-between">
+                <h5 class="mb-0">#${order.order_id}  <strong>£${parseFloat(order.order_total).toFixed(2)} ${order.payment_method}</strong> </h5>
+                <small class="fs-6 badge text-bg-dark p-2">${moment(order.order_time).format("h:mma")}</small>
+            </div>
+            <div class="d-flex w-100 justify-content-between mt-2">
+                <h5 class="mb-0">${order.customer_name} ${order.customer_tel}</h5>
+                <small class="fs-6 badge ${deliveryClass} p-2">${deliveryWord} due: ${moment(order.order_for_time).format("h:mm")}</small>
+            </div>
+            ${stuartHtml}
+            <div class="d-grid gap-2">
+                ${button}
+            </div>
+        </span>`;
+}
+
+
+function updateDataContainer(data) {
+    const noOrders = document.getElementById('waiting_for_orders');
+    const orderViewContainer = document.getElementById('order_view');
+
+    if (data.length === 0 || !Array.isArray(data)) {
+          noOrders.style.display = 'block';
+          dataContainer.innerHTML = "";
+          orderViewContainer.innerHTML = "";
+    } else {
+        noOrders.style.display = 'none';
+        const ordersHtml = data.map(createOrderHtml).join('');
+        dataContainer.innerHTML = ordersHtml;
+    }
+  }
+
+  function fetchData() {
+    const loadingIcon = document.getElementById('loadingIcon');
+        if (shouldPoll) {
+            if (loadingIcon) {
+                loadingIcon.style.display = 'block';
+            }
+            fetch('/get_orders', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                //console.log(data)
+                if (loadingIcon) {
+                    loadingIcon.style.display = 'none';
+                }
+                // Create a new array by filtering out objects where "order_status" is "completed"
+                //const filteredData = data.filter(item => item.order_status !== 'completed');
+                const filteredData = data.filter(item => 
+                    item?.stuart_cancel_seen !== "1" &&
+                    item.order_status !== 'completed'
+                );
+                const currentDataJSON = JSON.stringify(filteredData);
+
+                if (currentDataJSON !== previousDataJSON) {
+                    updateDataContainer(filteredData);
+                    previousDataJSON = currentDataJSON;
+                }
+            })
+            .catch(error => {
+                // Hide the loading icon on error
+                if (loadingIcon) {
+                    loadingIcon.style.display = 'none';
+                }
+                console.error('Error fetching data:', error);
+                dataContainer.innerText = 'An error occurred while fetching data.';
+            });
+        }
+    }
+
+    function refreshTokenAndFetchData() {
+        fetch('/refresh_token', {
+            method: 'GET'
+        })
+        .then(response => response.json())
+        .then(newTokenData => {
+            token = newTokenData.token;
+            shouldPoll = true;  // Resume polling
+            fetchData();
+        })
+        .catch(error => {
+            console.error('Error refreshing token:', error);
+            dataContainer.innerText = 'An error occurred while refreshing the token.';
+        });
+    }
+
+    function showOrder(id, encodedOrderJson) {
+        const orderJsonString = decodeURIComponent(encodedOrderJson);
+        const order = JSON.parse(orderJsonString);
+        //const deliveryClass = order.delivery_collection === 'Collection' ? 'text-primary' : 'text-info';
+        const order_delivery = order.delivery_collection;
+        const deliveryWord = order_delivery.match(/Delivery|Collection/i) ? order_delivery.match(/Delivery|Collection/i)[0] : order.delivery_collection;
+
+        let deliveryPrice = parseFloat(order_delivery.match(/\d+\.\d+/));
+        deliveryPrice = isNaN(deliveryPrice) || deliveryPrice === 0 ? '' : '£' + deliveryPrice.toFixed(2);
+      
+        const deliveryClass = deliveryWord === 'Collection' ? 'text-primary' : 'text-info';
+        const orderView = document.getElementById('order_view');
+
+        var note = order.order_note ? '<hr><p>' + order.order_note + '</p>' : '';
+        var deliveryFee = parseFloat(order.delivery_value) > 0 ? `Delivery: <span class="float-end">£${parseFloat(order.delivery_value).toFixed(2)}</span><br>` : `${deliveryWord}<span class="float-end">${deliveryPrice}</span><br>`;
+        var discountAmount = parseFloat(order.discount_value) > 0 ? `Discount: <span class="float-end">£${parseFloat(order.discount_value).toFixed(2)}</span><br>` : '';
+        
+        var items = order.items
+            .replaceAll(/(?<!~)<br>/g, '<br>&nbsp;&nbsp;&nbsp;&nbsp;')
+            .replaceAll(/~<br>/g, '</span><br>')
+            .replaceAll(/ - /g, '<span class="float-end">£')
+            .replaceAll(/~/g, '</span><br>');
+
+        var encodedOrderUrl = encodeURIComponent(order.url);
+        orderView.innerHTML = `
+            <div class="card rounded-0 border" style="overflow-y: auto;">
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-dark rounded-0 p-3 mb-2" type="button" onclick="printOrderManual(this)" data-order_id="${order.order_id}" data-time="${order.order_time}" data-delivery="${order.delivery_collection}" data-name="${order.customer_name}" data-tel="${order.customer_tel}" data-for="${order.order_for_time}" data-address="${order.delAdd}" data-items="${order.items}" data-total="${order.order_total}" data-discount="${order.discount_value}" data-payment="${order.payment_method}" data-note="${order.order_note}" data-delivery_value="${order.delivery_value}" data-count="${order.CNT}" data-url="${encodedOrderUrl}">Print</button>
+                    </div>
+                    <div class="d-flex w-100 justify-content-between">
+                        <h4 class="mb-0">${moment(order.order_time).format("ddd Do MMM")}, <span class="${deliveryClass}">${deliveryWord}</span></h4>
+                    </div>
+                    <p class="card-text lead fw-bold">${order.customer_name} - ${order.customer_tel}<br>Placed: ${moment(order.order_time).format("h:mma")}<br>Due: ${moment(order.order_for_time).format("h:mm")}<br>${order.delAdd}</p>
+                    ${note}
+                    <hr>
+                    <p class="card-text fw-bold">${items}</p>
+                    <hr>
+                    <p class="card-text lead fw-bold text-danger">${deliveryFee}${discountAmount}Total ${order.payment_method}: <span class="float-end">£${parseFloat(order.order_total).toFixed(2)}<span></p>
+                </div>
+            </div>`;
+    }
+
+    fetchData(); // Initial fetch
+
+    // Poll every 30 seconds
+    setInterval(() => {
+        if (!shouldPoll) {
+            return;  // Don't poll if shouldPoll is false
+        }
+        fetchData();
+    }, 45000);
+
+  </script>
+{% endblock %}
+{% block offcanvas_scripts %}
+{% endblock %}
