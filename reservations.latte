@@ -1,0 +1,166 @@
+{layout 'layout.latte'}
+
+{block title}My Reservations{/block}
+
+{var $active_page = 'reservations'}
+
+{block dashboard_content}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0">My Reservations</h4>
+    <a href="{$base_path}/reservations" class="btn btn-primary btn-sm">
+        <i class="bi bi-calendar-plus me-1"></i>New Reservation
+    </a>
+</div>
+
+{if empty($upcoming) && empty($past)}
+    <div class="card dashboard-card">
+        <div class="card-body text-center py-5">
+            <i class="bi bi-calendar-x text-muted" style="font-size: 4rem;"></i>
+            <h5 class="mt-3">No reservations yet</h5>
+            <p class="text-muted">Your reservation history will appear here once you book a table.</p>
+            <a href="{$base_path}/reservations" class="btn btn-primary">Book a Table</a>
+        </div>
+    </div>
+{else}
+    {* Upcoming Reservation Highlight *}
+    {if !empty($upcoming) && isset($upcoming[0])}
+    {var $next = $upcoming[0]}
+    <div class="card dashboard-card mb-4 border-primary" style="border-width: 2px;">
+        <div class="card-header bg-primary text-white">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-calendar-event me-2"></i>
+                <strong>Next Reservation</strong>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-8">
+                    <h5 class="mb-3">
+                        {date('l, j F Y', strtotime($next['reservation_date']))} at {$next['reservation_time']}
+                    </h5>
+                    <div class="row g-3">
+                        <div class="col-sm-4">
+                            <small class="text-muted d-block">Party Size</small>
+                            <strong><i class="bi bi-people me-1"></i>{$next['party_size']} {$next['party_size'] == 1 ? 'guest' : 'guests'}</strong>
+                        </div>
+                        <div class="col-sm-4">
+                            <small class="text-muted d-block">Status</small>
+                            <span class="badge {get_reservation_badge_class($next['status'])}">{get_reservation_status_text($next['status'])}</span>
+                        </div>
+                        {if $next['deposit_required']}
+                        <div class="col-sm-4">
+                            <small class="text-muted d-block">Deposit</small>
+                            <strong>£{number_format($next['deposit_amount'], 2)}</strong>
+                            {if $next['deposit_paid']}
+                                <i class="bi bi-check-circle-fill text-success ms-1"></i>
+                            {else}
+                                <i class="bi bi-exclamation-circle-fill text-warning ms-1"></i>
+                            {/if}
+                        </div>
+                        {/if}
+                    </div>
+                    {if $next['special_requests']}
+                    <div class="mt-3">
+                        <small class="text-muted d-block">Special Requests</small>
+                        <p class="mb-0">{$next['special_requests']}</p>
+                    </div>
+                    {/if}
+                </div>
+                <div class="col-md-4 text-md-end mt-3 mt-md-0">
+                    <div class="d-flex flex-column gap-2">
+                        <a href="{$base_path}/reservations/confirmation/{$next['reservation_id']}/{$next['token']}" class="btn btn-outline-primary btn-sm">
+                            <i class="bi bi-eye me-1"></i>View Details
+                        </a>
+                        {if can_add_to_calendar($next)}
+                        <a href="{$base_path}/reservations/calendar/{$next['reservation_id']}/{$next['token']}" class="btn btn-outline-secondary btn-sm">
+                            <i class="bi bi-calendar-plus me-1"></i>Add to Calendar
+                        </a>
+                        {/if}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {/if}
+
+    {* Upcoming Reservations List *}
+    {if count($upcoming) > 1}
+    <h5 class="mb-3">Other Upcoming Reservations</h5>
+    <div class="card dashboard-card mb-4">
+        <div class="list-group list-group-flush">
+            {foreach $upcoming as $index => $reservation}
+                {if $index > 0}
+                <div class="list-group-item py-3">
+                    <div class="row align-items-center">
+                        <div class="col-sm-6">
+                            <div class="d-flex align-items-center gap-2 mb-1">
+                                <strong>#{$reservation['reservation_id']|padLeft:6,'0'}</strong>
+                                <span class="badge {get_reservation_badge_class($reservation['status'])}">{get_reservation_status_text($reservation['status'])}</span>
+                            </div>
+                            <small class="text-muted d-block">
+                                {date('l, j F Y', strtotime($reservation['reservation_date']))} at {$reservation['reservation_time']}
+                            </small>
+                        </div>
+                        <div class="col-sm-3 mt-2 mt-sm-0">
+                            <small class="text-muted d-block">Party Size</small>
+                            <span><i class="bi bi-people me-1"></i>{$reservation['party_size']} {$reservation['party_size'] == 1 ? 'guest' : 'guests'}</span>
+                        </div>
+                        <div class="col-sm-3 mt-2 mt-sm-0 text-sm-end">
+                            <a href="{$base_path}/reservations/confirmation/{$reservation['reservation_id']}/{$reservation['token']}" class="btn btn-sm btn-outline-primary">
+                                View
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                {/if}
+            {/foreach}
+        </div>
+    </div>
+    {/if}
+
+    {* Past Reservations *}
+    {if !empty($past)}
+    <h5 class="mb-3">Past Reservations</h5>
+    <div class="card dashboard-card">
+        <div class="list-group list-group-flush">
+            {foreach $past as $reservation}
+            <div class="list-group-item py-3">
+                <div class="row align-items-center">
+                    <div class="col-sm-6">
+                        <div class="d-flex align-items-center gap-2 mb-1">
+                            <strong>#{$reservation['reservation_id']|padLeft:6,'0'}</strong>
+                            <span class="badge {get_reservation_badge_class($reservation['status'])}">{get_reservation_status_text($reservation['status'])}</span>
+                        </div>
+                        <small class="text-muted d-block">
+                            {date('l, j F Y', strtotime($reservation['reservation_date']))} at {$reservation['reservation_time']}
+                        </small>
+                    </div>
+                    <div class="col-sm-3 mt-2 mt-sm-0">
+                        <small class="text-muted d-block">Party Size</small>
+                        <span><i class="bi bi-people me-1"></i>{$reservation['party_size']} {$reservation['party_size'] == 1 ? 'guest' : 'guests'}</span>
+                    </div>
+                    <div class="col-sm-3 mt-2 mt-sm-0 text-sm-end">
+                        {if $reservation['deposit_required']}
+                            {if $reservation['deposit_paid']}
+                                <small class="text-success d-block">
+                                    <i class="bi bi-check-circle-fill me-1"></i>Deposit £{number_format($reservation['deposit_amount'], 2)}
+                                </small>
+                            {/if}
+                        {/if}
+                        <a href="{$base_path}/reservations/confirmation/{$reservation['reservation_id']}/{$reservation['token']}" class="btn btn-sm btn-outline-secondary">
+                            View
+                        </a>
+                    </div>
+                </div>
+            </div>
+            {/foreach}
+        </div>
+    </div>
+    {/if}
+{/if}
+
+<div class="alert alert-info mt-4">
+    <i class="bi bi-info-circle me-2"></i>
+    <strong>Need to cancel a reservation?</strong> Please call us at <a href="tel:{$site['contact']['phone']}">{$site['contact']['phone']}</a>
+</div>
+{/block}
