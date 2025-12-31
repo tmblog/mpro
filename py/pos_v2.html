@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-
 {% block title %}POS{% endblock %}
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/modals.custom.css') }}">
@@ -216,12 +215,19 @@
         userRole: Number("{{ session['role']|default(1) }}"),
         maxDiscountPercent: Number("{{ session['max_discount_for_role_two']|default(10) }}")
     };
+    const COVER_SELECT_CONFIG = {
+        enabled: {{ (cover_config.enabled | default(false)) | tojson }},
+        methods: {{ (cover_config.methods | default([])) | tojson }},
+        printGroups: {{ (cover_config.print_groups | default([])) | tojson }},
+        categoryPrintGroups: {{ (category_print_groups | default({})) | tojson }}
+    };
 </script>
 <script src="{{ url_for('static', filename='js/sweetalert.min.js') }}"></script>
 <script src="{{ url_for('static', filename='js/pos.helpers.js') }}"></script>
 <script src="{{ url_for('static', filename='js/pos.steps.methods.helpers.js') }}"></script>
 <script src="{{ url_for('static', filename='js/checkout.helpers.js') }}"></script>
 <script src="{{ url_for('static', filename='js/discount.helpers.js') }}"></script>
+<script src="{{ url_for('static', filename='js/guest_tracking.js') }}"></script>
 <script>
     let customData = {
         steps: [],
@@ -390,13 +396,14 @@
 
     function completeCustomisation() {
         const optionString = buildOptionString();
-        addToCart(
+        handleProductWithGuestCheck(
             customData.meta.productId,
             customData.meta.productName,
             customData.meta.formattedPrice,
             optionString,
             customData.meta.categoryOrder,
-            customData.meta.vatable
+            customData.meta.vatable,
+            customData.meta.categoryId
         );
         closeCustomisation();
     }
@@ -513,14 +520,14 @@
         }
     }
     
-    function handleProductButton(event, productId, productName, formattedPrice, options, currentMenu, categoryOrder, vatable) {
+    function handleProductButton(event, productId, productName, formattedPrice, options, currentMenu, categoryOrder, vatable, categoryId) {
         event.preventDefault();
         playSoundFile("stop.mp3");
         if (options === 'null') {
-            addToCart(productId, productName, formattedPrice, options, categoryOrder, vatable);
+            handleProductWithGuestCheck(productId, productName, formattedPrice, options, categoryOrder, vatable, categoryId);
         } else {
             const optionArray = options.split(',').map(option => option.trim());
-            fetchOptionsData(optionArray, currentMenu, productId, productName, formattedPrice, categoryOrder, vatable);
+            fetchOptionsWithGuestCheck(optionArray, currentMenu, productId, productName, formattedPrice, categoryOrder, vatable, categoryId);
         }
     }
 
@@ -575,7 +582,7 @@
         .then(res => res.json())
         .then(data => {
             if (data.options) {
-                launchCustomisationUI(data.options, { productId, productName, formattedPrice, categoryOrder, vatable });
+                launchCustomisationUI(data.options, { productId, productName, formattedPrice, categoryOrder, vatable, categoryId });
             } else {
                 showToast('No options found for this product', false);
             }
@@ -630,7 +637,7 @@
                     productsHtml += `
                         <div class="col-xl-3 col-md-3 col-sm-4 m-0 p-0 border border-light border-opacity-10">
                             <button class="btn btn-light btn-card w-100 h-100 rounded-0" 
-                                    onclick="handleProductButton(event, '${product[0]}','${productName}', '${formattedPrice}', '${product[3]}', '${currentMenu}', '${product[4]}', '${product[5]}')" 
+                                    onclick="handleProductButton(event, '${product[0]}','${productName}', '${formattedPrice}', '${product[3]}', '${currentMenu}', '${product[4]}', '${product[5]}', '${categoryId}')"
                                     ${fullStyle} 
                                     ${disabledAttr}>
                                 <div class="mb-1 product-name">${productName} ${stockBadge}</div>
@@ -676,7 +683,13 @@
             });
         }
 
+    let lastLoadedCartId = null;
+
     function fetchCartData(cartId) {
+        if (lastLoadedCartId !== null && lastLoadedCartId !== cartId) {
+            resetGuestState();
+        }
+        lastLoadedCartId = cartId;
         return fetch(`/get_current_cart/${cartId}`)
             .then(response => {
                 if (!response.ok) {
@@ -720,6 +733,8 @@
             `;
             
             // Show edit/merge/split buttons for dine-in
+            const guestButton = renderGuestButton(totalCovers, cartData.order_type);
+
             mergeSpltButtons = `
                 <div class="btn-group btn-group-sm mt-2">
                     <button class="btn btn-outline-primary" onclick="showEditTablesModal(${cartData.cart_id})" title="Edit covers or swap table">
@@ -731,6 +746,7 @@
                     <button class="btn btn-outline-warning" onclick="showSplitTablesModal(${cartData.cart_id})" title="Split tables to new order">
                         <i class="bi-scissors"></i>
                     </button>
+                    ${guestButton}
                 </div>
             `;
         }
@@ -814,7 +830,6 @@
             .then(data => {
                 const cartItems = data.items || [];
                 const cartItemsQty = cartItems.length;
-                console.log('Cart items:', cartItems);
                 if (cartItemsQty > 0) {
                     const cartData = data.cart_data || {};
                     let grandTotal = 0;              // sum of all line totals (after per-item discounts)
@@ -829,6 +844,8 @@
                         let optionBadgeHTML = '';
 
                         totalItems += (parseInt(item.quantity) || 0);
+
+                        const guestBadge = item.guest_number ? `<span class="badge bg-secondary">G${item.guest_number}</span>` : '';
 
                         // Build option badges + accumulate options price
                         sets.forEach(set => {
@@ -899,6 +916,7 @@
                                     <div style="flex: 1; min-width: 0;">
                                         <div class="d-flex align-items-center">
                                             <span class="badge bg-primary me-2">${item.quantity}</span>
+                                            ${guestBadge}
                                             <span class="text-truncate">${item.product_name}</span>
                                         </div>
                                         <div class="mt-1">
@@ -1392,7 +1410,12 @@
             .then(data => {
                 const existingMods = data.existing_mods || [];
                 const presets = data.presets || [];
-                
+                const guestNumber = data.guest_number;
+
+                const guestDropdown = (typeof buildGuestReassignDropdown === 'function') 
+                ? buildGuestReassignDropdown(guestNumber, currentCartCovers) 
+                : '';
+
                 // Build presets HTML with prices
                 const presetsHTML = presets.length > 0 
                     ? presets.map(preset => {
@@ -1485,7 +1508,7 @@
                                 </button>
                             </div>
                         </div>
-                        
+                        ${guestDropdown}
                         <hr>
                         
                         <!-- Modifier Presets -->
@@ -1699,6 +1722,10 @@
     function saveCartItemMods(cartItemId) {
         const quantity = document.getElementById('qtyInput').value;
         
+        const guestNumber = (typeof getSelectedGuestFromModal === 'function') 
+        ? getSelectedGuestFromModal() 
+        : undefined;
+
         // Collect all modifiers
         const mods = [];
         
@@ -1731,6 +1758,10 @@
             mods: mods,
             quantity: quantity
         };
+
+        if (guestNumber !== undefined) {
+            data.guest_number = guestNumber;
+        }
         
         fetch('/update_modifier', {
             method: 'POST',
